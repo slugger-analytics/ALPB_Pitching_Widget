@@ -38,6 +38,26 @@ ui <- fluidPage(
   
   useShinyjs(),
   
+  tags$head(
+    tags$style(HTML("
+      #page-spinner {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+      }
+    "))
+  ),
+  
+  div(id = "page-spinner", 
+      div(style = "text-align: center; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3);",
+          h3("Generating PDF... This may take some time"),
+          tags$div(class = "spinner-border text-info", role = "status", style = "width: 3rem; height: 3rem;")
+      )
+  ),
+  
   
   fluidRow(
     column(1),
@@ -204,7 +224,11 @@ ui <- fluidPage(
 )
 
 # server
-server <- function(input, output) {
+server <- function(input, output, session) {
+  shinyjs::onclick("download_pdf", {
+    runjs("document.getElementById('page-spinner').style.display = 'block';")
+  })
+  
   
   observe({
     if (is.null(alpb_player_id())) {
@@ -404,11 +428,25 @@ server <- function(input, output) {
   
   source('getPDFReport.R')
   output$download_pdf <- downloadHandler(
+    # filename = function() {
+    #   paste0(selected_pitcher(), " Pitcher Report.html")  # Change to .html extension
+    # },
+    # content = function(file) {
+    #   # Generate the HTML report
+    #   
+    #   html_path <- get_all_html(selected_player_row()$playerlinkid, pitch_data(), selected_pitcher(), input$tag_choice)
+    #   stats <- get_pitching_stats_only(selected_player_row()$playerlinkid)
+    # 
+    #   # Copy the generated HTML to the file that will be downloaded
+    #   file.copy(html_path, file)
+    # },
+    # contentType = "application/html"
     filename = function() {
       paste0(selected_pitcher(), " Pitcher Report.pdf")
     },
     content = function(file) {
-      # Generate the PDF
+      
+      session$sendCustomMessage("hideSpinner", TRUE)
       pdf_path <- NULL
       stats <- get_pitching_stats_only(selected_player_row()$playerlinkid)
       if ((is.null(stats) || nrow(stats) == 0) && is.null(alpb_player_id())) {
@@ -423,9 +461,11 @@ server <- function(input, output) {
       else {
         pdf_path <- get_all_pdf(selected_player_row()$playerlinkid, pitch_data(), selected_pitcher(), input$tag_choice)
       }
-      
+
       # Copy it to the file path that downloadHandler expects
       file.copy(pdf_path, file)
+      shinyjs::runjs("document.getElementById('page-spinner').style.display = 'none';")
+      
     },
     contentType = "application/pdf"
   )
