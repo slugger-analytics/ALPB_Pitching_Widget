@@ -2,6 +2,7 @@ library(httr)
 library(jsonlite)
 library(dplyr)
 
+#function to get ALPB pitch data
 get_alpb_pitches_by_pitcher <- function(player_id) {
   
   if (is.null(player_id) || player_id == "") {
@@ -32,7 +33,7 @@ get_alpb_pitches_by_pitcher <- function(player_id) {
     return("ALPB data unavailable.")
   }
   
-  # Determine total pages from meta
+  # determine total pages and paginate 
   total_pages <- parsed$meta$total
   all_data <- parsed$data
   
