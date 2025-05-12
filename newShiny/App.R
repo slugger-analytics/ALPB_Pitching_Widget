@@ -1,3 +1,4 @@
+#packages
 library(shiny)
 library(httr)
 library(jsonlite)
@@ -30,10 +31,9 @@ card_w_header <- function(title, body) {
 pitchers_df <- pitchers_df %>%
   mutate(full_name = paste(fname, lname))
 
-print(colnames(pitchers_df))
+#print(colnames(pitchers_df))
 
 # shiny ui
-
 ui <- fluidPage(
   
   useShinyjs(),
@@ -51,6 +51,7 @@ ui <- fluidPage(
     "))
   ),
   
+  #pdf generation
   div(id = "page-spinner", 
       div(style = "text-align: center; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3);",
           h3("Generating PDF... This may take some time"),
@@ -161,7 +162,7 @@ server <- function(input, output, session) {
     runjs("document.getElementById('page-spinner').style.display = 'block';")
   })
   
-  
+  #conditinoal panel
   observe({
     if (is.null(alpb_player_id())) {
       shinyjs::hide("alpbRow3")
@@ -212,7 +213,7 @@ server <- function(input, output, session) {
   })
   
   selected_pitcher <- reactive({
-    input$selected_player  # Return the full name of the selected pitcher
+    input$selected_player  # return the full name of the selected pitcher
   })
   
   #generates a list of unique pitches in a pitcher's repertoire based on tag
@@ -229,6 +230,7 @@ server <- function(input, output, session) {
     bindCache(pitch_data(), input$tag_choice)
   
   
+  #pitch types 
   output$pitch_type_ui <- renderUI({
     req(pitch_types())
     selectInput("selected_pitch_type", "Select Pitch Type:",
@@ -367,6 +369,7 @@ server <- function(input, output, session) {
     stats
   })
   
+  #player photo from alpb
   output$player_photo <- renderUI({
     req(selected_player_row())
     img_url <- selected_player_row()$photo
@@ -374,7 +377,7 @@ server <- function(input, output, session) {
     if (!is.na(img_url) && nzchar(img_url)) {
       tags$img(src = img_url, width = "100%", style = "border-radius: 8px;")
     } else {
-      tags$p("⚠️ No photo available.")
+      tags$p(" No photo available.")
     }
   })
   
