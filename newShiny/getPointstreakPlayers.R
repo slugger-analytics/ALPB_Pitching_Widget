@@ -2,13 +2,13 @@ library(httr)
 library(jsonlite)
 library(dplyr)
 
-# === STEP 1: Get all teams for the 2025 Spring Training season ===
+# get all teams from 2025 season
 
-# Season and API details
+# api 
 seasonid <- "34104"
 apikey <- "vIpQsngDfc6Y7WVgAcTt"
 
-# Request JSON from API
+# request json data
 url <- "https://api.pointstreak.com/baseball/league/structure/174/json"
 headers <- add_headers(apikey = apikey)
 params <- list(seasonid = seasonid)
@@ -17,17 +17,17 @@ res <- GET(url, headers, query = params)
 json_data <- content(res, as = "text", encoding = "UTF-8")
 parsed <- fromJSON(json_data, simplifyDataFrame = FALSE)
 
-# Get just the season with ID 34104
+# select seasonid
 season <- Filter(function(s) s$seasonid == seasonid, parsed$league$season)[[1]]
 
-# Extract and flatten all teams from all divisions
+# extract and flatten all teams from all divisions
 teams <- do.call(c, lapply(season$division, function(div) div$team))
 team_df <- bind_rows(teams)
 
 # Print team list
-print(team_df)
+#print(team_df)
 
-# === STEP 2: Helper to pull players for one team ===
+# get all the players / query roster for all teams 
 
 safe_extract <- function(field) {
   if (is.null(field)) return(NA)
@@ -39,6 +39,7 @@ get_players_for_team <- function(team) {
   teamlinkid <- team$teamlinkid
   teamname <- team$teamname
 
+  #roster endpoint
   url <- paste0("https://api.pointstreak.com/baseball/team/roster/", teamlinkid, "/", seasonid, "/json")
   res <- GET(url, add_headers(apikey = apikey))
 
@@ -50,6 +51,7 @@ get_players_for_team <- function(team) {
 
   if (is.null(players)) return(NULL)
 
+  #return all in a df
   bind_rows(lapply(players, function(p) {
     tibble(
       playerid = safe_extract(p$playerid),
@@ -70,7 +72,7 @@ get_players_for_team <- function(team) {
   }))
 }
 
-# === STEP 3: Loop through all teams and build the full player data ===
+# loop through all teams and build full player data
 
 all_players_df <- bind_rows(lapply(teams, get_players_for_team))
 
@@ -80,6 +82,6 @@ pitchers_df <- all_players_df %>%
   arrange(lname)
 
 
-# View sorted list
-print(pitchers_df)
+
+#print(pitchers_df)
 
