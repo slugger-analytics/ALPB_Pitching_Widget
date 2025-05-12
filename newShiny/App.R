@@ -101,45 +101,6 @@ ui <- fluidPage(
                     card_w_header("Season Stats", tableOutput("season_stats_output"))
              )
            ),
-           
-           # single fluidRow layout
-           # fluidRow(
-           #   
-           #   # Left column
-           #   column(4,
-           #          # First nested row: dropdown and download button
-           #          fluidRow(
-           #            column(8,
-           #                   wellPanel(selectInput("selected_player", "Choose a Pitcher:", choices = pitchers_df$full_name))
-           #            ),
-           #            column(4,
-           #                   downloadButton("download_pdf", "Download PDF")
-           #            )
-           #          ),
-           #          # Second nested row: pitcher info
-           #          fluidRow(
-           #            column(12,
-           #                   div(style = "margin-top: 20px;",
-           #                       card_w_header("Pitcher Information",
-           #                                     div(style = "text-align: left; margin-top: 2vh;",  
-           #                                         fluidRow(
-           #                                           column(6, uiOutput("player_photo")),
-           #                                           column(6, uiOutput("player_info_placeholder"))
-           #                                         )
-           #                                     )
-           #                       )
-           #                   )
-           #            )
-           #          )
-           #   ),
-           #   
-           #   # Right column: season stats
-           #   column(8,
-           #          card_w_header("Season Stats", tableOutput("season_stats_output"))
-           #   )
-           # ),
-           
-           
            #third row
            fluidRow(
              id = "alpbRow3",
@@ -151,10 +112,8 @@ ui <- fluidPage(
              #break graph
              column(6,
                     card_w_header("Induced Vertical Break vs Horizontal Break", plotOutput("breakPlot", height = "300px"))
-                    # card_w_header("Strike Zone", plotOutput("heatmaps", height = "300px"))
              )
            ),
-           
            #4th row -- buttons
            fluidRow(
              id = "alpbRow4",
@@ -173,7 +132,6 @@ ui <- fluidPage(
                     uiOutput("pitch_type_ui")
              )
            ),
-           
            #5th row - heat maps
            fluidRow(
              id = "alpbRow5",
@@ -192,32 +150,6 @@ ui <- fluidPage(
              column(12,
                     card_w_header("Pitch Type Percentages for Each Count",DTOutput("pitchTable"))
              ))
-           
-           # ,
-           
-           # fluidRow(
-           #   column(12,
-           #          h4("Pointstreak Data:"),
-           #          tableOutput("player_info"))
-           #   ),
-           # fluidRow(
-           #   column(12,
-           #          h4("ALPB Data:"),
-           #          verbatimTextOutput("alpb_info"))),
-           # fluidRow(
-           #   column(12,
-           #          h4("Pointstreak playerlinkid:"),
-           #          verbatimTextOutput("playerlink_output"))),
-           # fluidRow(
-           #   column(12,
-           #          h4("Pointstreak Season Pitching Stats"),
-           #          tableOutput("season_stats_output"))),
-           # fluidRow(
-           #   column(12,
-           #          h4("ALPB Pitch-by-Pitch Data"),
-           #          tableOutput("alpb_pitch_data"))
-           # )
-           
     ),
     column(1)
   )
@@ -251,19 +183,6 @@ server <- function(input, output, session) {
       filter(full_name == input$selected_player)
   })
   
-  # Store ALPB player ID reactively
-  # alpb_player_id <- reactiveVal(NULL)
-  # 
-  # observeEvent(input$selected_player, {
-  #   selected <- selected_player_row()
-  #   result <- get_alpb_pitcher_info(selected$fname, selected$lname)
-  #   
-  #   if (is.null(result) || is.na(result$player_id) || result$player_id == "data unavailable") {
-  #     alpb_player_id(NULL)
-  #   } else {
-  #     alpb_player_id(result$player_id)
-  #   }
-  # })
   
   alpb_player_id <- reactive({
     selected <- selected_player_row()
@@ -278,18 +197,10 @@ server <- function(input, output, session) {
     bindCache(input$selected_player)
   
   
-  # pitch_data <- reactive({
-  #   # req(alpb_player_id())  # stops here if NULL
-  #   get_alpb_pitches_by_pitcher(alpb_player_id())
-  #   # get_alpb_pitches_by_pitcher(NULL)
-  # })
-  
   pitch_data <- reactive({
     get_alpb_pitches_by_pitcher(alpb_player_id())
   }) %>%
     bindCache(alpb_player_id())
-  
-  
   
   output$scatter_header <- renderUI({
     if(input$break_type == "induced_vert_break") {
@@ -302,20 +213,6 @@ server <- function(input, output, session) {
   selected_pitcher <- reactive({
     input$selected_player  # Return the full name of the selected pitcher
   })
-  
-  
-  # pitch_types <- reactive({
-  #   data <- pitch_data()
-  #   req(data)
-  #   #unique(na.omit(data$auto_pitch_type)) #Can change to user specification later
-  #   # Filter out "untagged" values
-  #   if (input$tag_choice == "auto_pitch_type") {
-  #     pitch_types <- unique(na.omit(data$auto_pitch_type))
-  #   } else {
-  #     pitch_types <- unique(na.omit(data$tagged_pitch_type))
-  #   }
-  #   pitch_types <- pitch_types[pitch_types != "Undefined"]
-  # })
   
   pitch_types <- reactive({
     data <- pitch_data()
@@ -336,15 +233,6 @@ server <- function(input, output, session) {
     selectInput("selected_pitch_type", "Select Pitch Type:",
                 choices = c("All", pitch_types()), selected = "All")
   })
-  
-  # output$player_info_placeholder <- renderUI({
-  #   tagList(
-  #     div(HTML("<b>Weight:</b> Pointstreak TBD")),
-  #     div(HTML("<b>Height:</b> Pointstreak TBD")),
-  #     div(HTML("<b>Throws:</b> Pointstreak TBD")),
-  #     div(HTML("<b>Bats:</b> Pointstreak TBD"))
-  #   )
-  # })
   
   output$player_info_placeholder <- renderUI({
     req(selected_player_row())  # Ensure there's a selection
@@ -368,23 +256,12 @@ server <- function(input, output, session) {
   
   source('getGraphs.R')
   
-  # output$velPlot <- renderPlot({
-  #   data <- pitch_data()
-  #   shiny::validate(shiny::need(!is.null(data) && nrow(data) > 0, "Need data"))
-  #   build_graph(data, "rel_speed", input$break_type, input$tag_choice)
-  # })
-  
   output$velPlot <- renderPlot({
     data <- pitch_data()
     shiny::validate(shiny::need(!is.null(data) && nrow(data) > 0, "Need data"))
     build_graph(data, "rel_speed", input$break_type, input$tag_choice)
   }) %>%
     bindCache(pitch_data(), input$break_type, input$tag_choice)
-  
-  
-  # output$breakPlot <- renderPlot({
-  #   build_graph(pitch_data(), "horz_break", "induced_vert_break", input$tag_choice)
-  # })
   
   output$breakPlot <- renderPlot({
     build_graph(pitch_data(), "horz_break", "induced_vert_break", input$tag_choice)
@@ -397,9 +274,6 @@ server <- function(input, output, session) {
     data <- pitch_data()
     req(data)
     filtered_data <- data[data$batter_side == "Right", ]
-    # if (!is.null(input$selected_pitch_type) && input$selected_pitch_type != "All") {
-    #   filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
-    # }
     if (!is.null(input$selected_pitch_type) && input$tag_choice == "auto_pitch_type" && input$selected_pitch_type != "All") {
       filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
     } else if (!is.null(input$selected_pitch_type) && input$tag_choice == "tagged_pitch_type" && input$selected_pitch_type != "All") {
@@ -413,9 +287,6 @@ server <- function(input, output, session) {
     data <- pitch_data()
     req(data)
     filtered_data <- data[data$batter_side == "Left", ]
-    # if (!is.null(input$selected_pitch_type) && input$selected_pitch_type != "All") {
-    #   filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
-    # }
     if (!is.null(input$selected_pitch_type) && input$tag_choice == "auto_pitch_type" && input$selected_pitch_type != "All") {
       filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
     } else if (!is.null(input$selected_pitch_type) && input$tag_choice == "tagged_pitch_type" && input$selected_pitch_type != "All") {
@@ -428,19 +299,6 @@ server <- function(input, output, session) {
   
   source('getPDFReport.R')
   output$download_pdf <- downloadHandler(
-    # filename = function() {
-    #   paste0(selected_pitcher(), " Pitcher Report.html")  # Change to .html extension
-    # },
-    # content = function(file) {
-    #   # Generate the HTML report
-    #   
-    #   html_path <- get_all_html(selected_player_row()$playerlinkid, pitch_data(), selected_pitcher(), input$tag_choice)
-    #   stats <- get_pitching_stats_only(selected_player_row()$playerlinkid)
-    # 
-    #   # Copy the generated HTML to the file that will be downloaded
-    #   file.copy(html_path, file)
-    # },
-    # contentType = "application/html"
     filename = function() {
       paste0(selected_pitcher(), " Pitcher Report.pdf")
     },
@@ -489,29 +347,7 @@ server <- function(input, output, session) {
     selected_player_row() %>% dplyr::select(-full_name)
   })
   
-  # Show ALPB info
-  # output$alpb_info <- renderPrint({
-  #   req(selected_player_row())
-  #   selected <- selected_player_row()
-  #   result <- get_alpb_pitcher_info(selected$fname, selected$lname)
-  # 
-  #   if (is.na(result$player_id) || result$player_id == "data unavailable") {
-  #     alpb_player_id(NULL)
-  #     cat("\u26A0\uFE0F ALPB Data Unavailable")
-  #   } else {
-  #     alpb_player_id(result$player_id)
-  #     cat("Player ID: ", result$player_id, "\n")
-  #     cat("Pitching Handedness: ", result$pitching_hand)
-  #   }
-  # })
-  
-  # Show Pointstreak playerlinkid
-  # output$playerlink_output <- renderPrint({
-  #   req(selected_player_row())
-  #   cat("playerlinkid:", selected_player_row()$playerlinkid)
-  # })
-  
-  # # ✅ Show season stats from getSeasonStats.R
+  #season stats from getSeasonStats.R
   output$season_stats_output <- renderTable({
     req(selected_player_row())
     playerlinkid <- selected_player_row()$playerlinkid
@@ -523,17 +359,6 @@ server <- function(input, output, session) {
     
     stats
   })
-  
-  
-  # 
-  # output$alpb_pitch_data <- renderTable({
-  #   req(alpb_player_id())
-  #   pitch_df <- get_alpb_pitches_by_pitcher(alpb_player_id())
-  #   if (is.null(pitch_df)) {
-  #     return(tibble::tibble(message = "\u26A0\uFE0F No pitch data found for this player."))
-  #   }
-  #   pitch_df
-  # })
   
   output$player_photo <- renderUI({
     req(selected_player_row())
