@@ -4,33 +4,31 @@ library(MASS)
 library(dplyr)
 library(cowplot)
 
-
+#filter the batter hand for right handed before building a heatmap
 build_heatmap_right <- function(filtered_df) {
   filtered_data <- filtered_df[filtered_df$batter_side == "Right", ]
   build_heatmap(filtered_data)
 }
 
+#filter the batter hand for left handed before building a heatmap
 build_heatmap_left <- function(filtered_df) {
   filtered_data <- filtered_df[filtered_df$batter_side == "Left", ]
   build_heatmap(filtered_data)
 }
 
+#for pdf use -- builds heatmap against all pitchers and against left and right handed pitchers
 build_all_three <- function(filtered_df, pitch_name) {
-  # combined <- list()
-  # combined["All"] <- build_heatmap(filtered_df)
-  # combined["Right"] <- build_heatmap_right(filtered_df)
-  # combined["Left"] <- build_heatmap_left(filtered_df)
   new_heatmap_list <- plot_grid( build_heatmap(filtered_df), build_heatmap_right(filtered_df), build_heatmap_left(filtered_df), 
-                                 #labels = c(paste(pitch_name, "Heatmap vs All Batters"), paste(pitch_name, "Heatmap vs RHB"), paste(pitch_name, "Heatmap vs LHB")),
                                  labels = c(paste(pitch_name, "vs All Batters"), paste(pitch_name, "vs RHB"), paste(pitch_name, "vs LHB")), 
                                  ncol = 3, align = "hv",
                                  axis = "tblr", 
-                                 label_size = 15,  # Adjust the label size (optional)
-                                 label_fontface = "plain"  # Use plain (not bold)
+                                 label_size = 15, 
+                                 label_fontface = "plain" 
                                  )
   return(new_heatmap_list)
 }
 
+#builds heatmap using a DF
 build_heatmap <- function(filtered_df) {
   
   # Check if there is data to plot, otherwise return a blank strike zone
@@ -57,14 +55,6 @@ build_heatmap <- function(filtered_df) {
     return(heatmap_viz)
   }
   
-  # Filter out rows where plate_loc_side or plate_loc_height is NA or infinite
-  
-  
-  # # Check if the data is empty after filtering
-  # if (nrow(filtered_df) == 0) {
-  #   return(ggplot() + 
-  #            labs(title = "No valid data to plot"))
-  # }
   
   # Define a grid over the entire plot range
   x_grid <- seq(-1.5, 1.5, length.out = 100)
@@ -102,24 +92,3 @@ build_heatmap <- function(filtered_df) {
   
   return(heatmap_viz)
 }
-
-# # Function to create the heatmap for hard-hit balls (ExitSpeed > 95)
-# get_batter_heatmaps <- function(data, pitcher) {
-#   
-#   # Filter data based on selected player, pitcher throws, and date range
-#   user_filtered_data <- data %>%
-#     filter(Pitcher == pitcher) %>%
-#     # filter(PitcherThrows == throws) %>%
-#     # filter(Date >= date_low & Date <= date_high)
-#   
-#   # Filter for hard-hit balls with ExitSpeed > 95 for selected pitch type
-#   # hard_hit_balls <- user_filtered_data %>%
-#   #   filter(!is.na(ExitSpeed) & !is.na(plate_loc_height) & (PitchCall == "InPlay")) %>%
-#   #   filter(ExitSpeed > 95) %>%
-#   #   filter(AutoPitchType == heat_pitch_type)  # Filter based on selected pitch type
-#   
-#   # Generate the heatmap using the filtered data
-#   heatmap <- build_heatmap(user_filtered_data)
-#   
-#   return(heatmap)
-# }

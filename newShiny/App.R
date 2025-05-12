@@ -183,7 +183,7 @@ server <- function(input, output, session) {
       filter(full_name == input$selected_player)
   })
   
-  
+  # ALPB player ID
   alpb_player_id <- reactive({
     selected <- selected_player_row()
     result <- get_alpb_pitcher_info(selected$fname, selected$lname)
@@ -196,17 +196,18 @@ server <- function(input, output, session) {
   }) %>% 
     bindCache(input$selected_player)
   
-  
+  #ALPB pitch data
   pitch_data <- reactive({
     get_alpb_pitches_by_pitcher(alpb_player_id())
   }) %>%
     bindCache(alpb_player_id())
   
+  #Header for the scatter plot
   output$scatter_header <- renderUI({
     if(input$break_type == "induced_vert_break") {
-      tagList("Vertical Break vs Velocity")  # Dynamic header for the plot
+      tagList("Vertical Break vs Velocity")  
     } else if(input$break_type == "horz_break") {
-      tagList("Horizontal Break vs Velocity")  # Dynamic header for the plot
+      tagList("Horizontal Break vs Velocity")  
     }
   })
   
@@ -214,10 +215,10 @@ server <- function(input, output, session) {
     input$selected_player  # Return the full name of the selected pitcher
   })
   
+  #generates a list of unique pitches in a pitcher's repertoire based on tag
   pitch_types <- reactive({
     data <- pitch_data()
     req(data)
-    
     if (input$tag_choice == "auto_pitch_type") {
       pitch_types <- unique(na.omit(data$auto_pitch_type))
     } else {
@@ -256,6 +257,7 @@ server <- function(input, output, session) {
   
   source('getGraphs.R')
   
+  #break vs velocity plot
   output$velPlot <- renderPlot({
     data <- pitch_data()
     shiny::validate(shiny::need(!is.null(data) && nrow(data) > 0, "Need data"))
@@ -263,17 +265,20 @@ server <- function(input, output, session) {
   }) %>%
     bindCache(pitch_data(), input$break_type, input$tag_choice)
   
+  #vert break vs horz break plot
   output$breakPlot <- renderPlot({
     build_graph(pitch_data(), "horz_break", "induced_vert_break", input$tag_choice)
   }) %>%
     bindCache(pitch_data(), input$tag_choice)
   
   source('getHeatMap.R')
-  
+  #Creates heatmap vs RHB according to current pitch filter
   output$heatmap_right <- renderPlot({
     data <- pitch_data()
     req(data)
+    #filters for RHB
     filtered_data <- data[data$batter_side == "Right", ]
+    #filters for current pitch type
     if (!is.null(input$selected_pitch_type) && input$tag_choice == "auto_pitch_type" && input$selected_pitch_type != "All") {
       filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
     } else if (!is.null(input$selected_pitch_type) && input$tag_choice == "tagged_pitch_type" && input$selected_pitch_type != "All") {
@@ -283,10 +288,13 @@ server <- function(input, output, session) {
   }) %>%
     bindCache(pitch_data(), input$selected_pitch_type, input$tag_choice)
   
+  #Creates heatmap vs LHB according to current pitch filter
   output$heatmap_left <- renderPlot({
     data <- pitch_data()
     req(data)
+    #filters for LHB
     filtered_data <- data[data$batter_side == "Left", ]
+    #filters for current pitch type
     if (!is.null(input$selected_pitch_type) && input$tag_choice == "auto_pitch_type" && input$selected_pitch_type != "All") {
       filtered_data <- filtered_data[filtered_data$auto_pitch_type == input$selected_pitch_type, ]
     } else if (!is.null(input$selected_pitch_type) && input$tag_choice == "tagged_pitch_type" && input$selected_pitch_type != "All") {
@@ -303,10 +311,11 @@ server <- function(input, output, session) {
       paste0(selected_pitcher(), " Pitcher Report.pdf")
     },
     content = function(file) {
-      
+      #might be a little slow so we show a message
       session$sendCustomMessage("hideSpinner", TRUE)
       pdf_path <- NULL
       stats <- get_pitching_stats_only(selected_player_row()$playerlinkid)
+      #creates PDF based on what data is available
       if ((is.null(stats) || nrow(stats) == 0) && is.null(alpb_player_id())) {
         pdf_path <- get_no_data_pdf(selected_pitcher())
       }
@@ -330,10 +339,8 @@ server <- function(input, output, session) {
   
   source("pitchSplit.R")
   
-  # Render the data table
-  
+  # Render the pitch split data table
   output$pitchTable <- renderDT({
-    # df <- get_pitch_type_percentages(pitch_data())
     req(pitch_data())
     df <- get_pitch_type_percentages(pitch_data(), input$tag_choice)
     datatable(df, options = list(pageLength = 12, scrollX = TRUE))  # Display the table
