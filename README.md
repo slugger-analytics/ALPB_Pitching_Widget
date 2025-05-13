@@ -13,6 +13,14 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an in
   - Pitch Type Percentages
 - **PDF Export**: Create a printable one-sheet pitcher report for scouting or game prep.
 
+## Data APIs
+
+- **Trackman** – Pitch-by-pitch data including spin rate, pitch type, velocity, break, and more.
+- **Pointstreak** – Aggregated season stats such as ERA, innings pitched, and strikeouts.
+
+We accessed data via their APIs using Postman and R's `httr` and `jsonlite` packages, implementing pagination and caching to improve performance.
+
+
 ## Installation
 
 To run the app locally, install the following R packages:
@@ -23,3 +31,4 @@ install.packages(c(
   "jsonlite", "patchwork", "rmarkdown", "rsconnect", "shiny",
   "shinyjs", "tibble", "tidyr"
 ))
+
