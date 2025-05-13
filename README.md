@@ -1,11 +1,20 @@
 # ALPB-Pitching-Widget1
 
-The Atlantic League of Professional Baseball (ALPB) is the highest-level professional baseball league outside of MLB. This project aims to develop a standalone Shiny App widget in R, mirroring the existing ALPB hitting widget but tailored for pitchers. The app will allow users to analyze and track key pitching metrics such as Earned Run Average (ERA) and Walks and Hits per Inning Pitched (WHIP). Designed for coaches, recruiters, and fans, it will provide valuable insights into pitchers' performances.
+The Atlantic League of Professional Baseball (ALPB) Pitching Widget is an interactive Shiny App developed in R that allows users to explore and analyze key pitching metrics for ALPB pitchers. This tool is designed for coaches, recruiters, front office personnel, and fans to track pitcher performance in real-time or over the season.
 
-Hosted using Shiny App, users can select a pitcher and the app will display several key graphs and tables: General pitcher info (name, team name, height, throw hand, etc), Season Stats, and Break v. Velocity, Induced Vertical vs. Horizontal Break, Strike Zone, Pitch Type Percentages, and a PDF generation graph. 
+#Overview
+The ALPB is the highest-level professional baseball league outside of MLB, and this tool mirrors our existing hitting widget — but tailored for pitchers. The app includes visuals and data summaries that help evaluate performance and pitch characteristics.
 
+#Features
+1. Pitcher Profile: General information including name, team, height, throwing hand, etc.
+2. Season Stats: Key performance metrics such as ERA, WHIP, strikeouts, etc.
 
-Ultimately, we hope that users such as pitchers, coaches, and front office members can easily access all this data and print it out on a small sheet of paper to help make insightful decisions throughout the game, in their analyses, or just for interest.
+Visualizations:
+3. Break vs. Velocity
+4. Induced Vertical Break vs. Horizontal Break
+5. Strike Zone Map
+6. Pitch Type Percentages
+7. PDF Generation: Generate a printable one-sheet summary of a pitcher's data.
 
 install.packages(c(
   "DT",
