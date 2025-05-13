@@ -10,8 +10,8 @@ The ALPB is the highest-level professional baseball league outside of MLB, and t
 2. Season Stats: Key performance metrics such as ERA, WHIP, strikeouts, etc.
 
 Visualizations:
-3. Break vs. Velocity
-4. Induced Vertical Break vs. Horizontal Break
+3. Break vs. Velocity //
+4. Induced Vertical Break vs. Horizontal Break//
 5. Strike Zone Map
 6. Pitch Type Percentages
 7. PDF Generation: Generate a printable one-sheet summary of a pitcher's data.
