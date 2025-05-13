@@ -2,14 +2,6 @@
 
 The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an interactive Shiny App built in R for analyzing and tracking pitching performance metrics. Designed for **coaches, recruiters, front office staff, and fans**, this app offers clear visualizations and data summaries to support informed decision-making.
 
----
-
-## Overview
-
-The ALPB is the highest-level professional baseball league outside of MLB. This pitching widget is a companion to our existing hitting widget, providing in-depth pitcher analysis through dynamic visualizations and key statistics.
-
----
-
 ##  Features
 
 - **Pitcher Profile**: Basic info including name, team, height, throwing hand, and more.
@@ -21,11 +13,9 @@ The ALPB is the highest-level professional baseball league outside of MLB. This 
   - Pitch Type Percentages
 - **PDF Export**: Create a printable one-sheet pitcher report for scouting or game prep.
 
----
-
 ## Installation
 
-To run the app locally, install the necessary R packages:
+To run the app locally, install the following R packages:
 
 ```r
 install.packages(c(
