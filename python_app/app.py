@@ -204,7 +204,17 @@ app.layout = dbc.Container(
                             ],
                             width=3,
                         ),
-                        dbc.Col(html.Div(id="pitch-type-dropdown-container"), width=3),
+                        dbc.Col(
+                            html.Div([
+                                html.Label("Select Pitch Type:", className="fw-bold"),
+                                dcc.Dropdown(
+                                    id="selected-pitch-type",
+                                    options=[{"label": "All", "value": "All"}],
+                                    value="All",
+                                ),
+                            ]),
+                            width=3,
+                        ),
                     ],
                     className="mb-3",
                 ),
@@ -308,7 +318,10 @@ def update_season_stats(selected_name):
         return "Player not found."
 
     playerlinkid = row.iloc[0]["playerlinkid"]
-    stats = get_pitching_stats(playerlinkid)
+    try:
+        stats = get_pitching_stats(playerlinkid)
+    except Exception:
+        return html.P("Error loading season stats.")
 
     if stats is None or stats.empty:
         return html.P("No season stats found for this player.")
@@ -396,33 +409,26 @@ def update_scatter_header(break_type):
 
 
 @callback(
-    Output("pitch-type-dropdown-container", "children"),
+    Output("selected-pitch-type", "options"),
+    Output("selected-pitch-type", "value"),
     Input("pitch-data-store", "data"),
     Input("tag-choice", "value"),
 )
 def update_pitch_type_dropdown(pitch_records, tag):
-    """Dynamically populate the pitch type filter dropdown."""
+    """Dynamically populate the pitch type filter dropdown options."""
+    default_options = [{"label": "All", "value": "All"}]
     if not pitch_records:
-        return ""
+        return default_options, "All"
 
     df = pd.DataFrame(pitch_records)
     if tag not in df.columns:
-        return ""
+        return default_options, "All"
 
     types = df[tag].dropna().unique().tolist()
     types = [t for t in types if t != "Undefined"]
-    options = [{"label": "All", "value": "All"}] + [{"label": t, "value": t} for t in sorted(types)]
+    options = default_options + [{"label": t, "value": t} for t in sorted(types)]
 
-    return html.Div(
-        [
-            html.Label("Select Pitch Type:", className="fw-bold"),
-            dcc.Dropdown(
-                id="selected-pitch-type",
-                options=options,
-                value="All",
-            ),
-        ]
-    )
+    return options, "All"
 
 
 @callback(
