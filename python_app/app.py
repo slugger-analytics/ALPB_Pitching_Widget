@@ -35,6 +35,7 @@ pitcher_names = pitchers_df["full_name"].tolist() if not pitchers_df.empty else 
 # ---------------------------------------------------------------------------
 _alpb_id_cache = {}
 _pitch_data_cache = {}
+_season_stats_cache = {}
 
 # ---------------------------------------------------------------------------
 # Helper: Bootstrap card with header
@@ -318,10 +319,16 @@ def update_season_stats(selected_name):
         return "Player not found."
 
     playerlinkid = row.iloc[0]["playerlinkid"]
-    try:
-        stats = get_pitching_stats(playerlinkid)
-    except Exception:
-        return html.P("Error loading season stats.")
+
+    # Check cache first
+    if playerlinkid in _season_stats_cache:
+        stats = _season_stats_cache[playerlinkid]
+    else:
+        try:
+            stats = get_pitching_stats(playerlinkid)
+        except Exception:
+            stats = None
+        _season_stats_cache[playerlinkid] = stats
 
     if stats is None or stats.empty:
         return html.P("No season stats found for this player.")
