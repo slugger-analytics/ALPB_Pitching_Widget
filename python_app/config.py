@@ -46,7 +46,7 @@ AXIS_SHORT_LABELS = {
 }
 
 # ── UI styling ───────────────────────────────────────────────────────────────
-TABLE_HEADER_COLOR = "#17a2b8"
+TABLE_HEADER_COLOR = "#002D72"
 
 TABLE_STYLE_HEADER = {
     "backgroundColor": TABLE_HEADER_COLOR,
