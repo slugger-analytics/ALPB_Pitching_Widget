@@ -62,8 +62,10 @@ def build_heatmap(df):
             z[z < 0.001] = np.nan
             fig.add_trace(go.Heatmap(
                 x=xg, y=yg, z=z,
-                colorscale="inferno",
-                
+                colorscale=[
+                    [0, "white"], [0.25, "blue"], [0.5, "green"],
+                    [0.75, "yellow"], [1.0, "red"],
+                ],
                 showscale=False, zsmooth="best",
             ))
         except np.linalg.LinAlgError:
