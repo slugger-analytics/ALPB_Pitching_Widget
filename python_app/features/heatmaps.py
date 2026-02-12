@@ -52,20 +52,18 @@ def build_heatmap(df):
 
     if not loc.empty and len(loc) >= 2:
         x, y = loc["plate_loc_side"].values, loc["plate_loc_height"].values
-        xg = np.linspace(-1.5, 1.5, 100)
-        yg = np.linspace(0, 4, 100)
+        xg = np.linspace(-1.5, 1.5, 300)
+        yg = np.linspace(0, 4, 300)
         xx, yy = np.meshgrid(xg, yg)
 
         try:
-            kernel = gaussian_kde(np.vstack([x, y]), bw_method=1.0)
+            kernel = gaussian_kde(np.vstack([x, y]), bw_method=.25)
             z = kernel(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
             z[z < 0.001] = np.nan
             fig.add_trace(go.Heatmap(
                 x=xg, y=yg, z=z,
-                colorscale=[
-                    [0, "white"], [0.25, "blue"], [0.5, "green"],
-                    [0.75, "yellow"], [1.0, "red"],
-                ],
+                colorscale="inferno",
+                
                 showscale=False, zsmooth="best",
             ))
         except np.linalg.LinAlgError:
