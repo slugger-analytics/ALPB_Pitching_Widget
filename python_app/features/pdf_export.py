@@ -1,10 +1,9 @@
 """
-PDF scouting report export.
+PDF scouting report export — single-page portrait letter (8.5 × 11 in).
 
 Callback: triggered by the Download PDF button.
-Generation: builds a portrait letter-size (8.5 × 11) scouting report by
-converting Plotly visualizations from the feature modules into images
-and composing them with matplotlib.
+Generation: converts Plotly figures from the feature modules into images,
+then composes everything onto ONE page with matplotlib.
 
 Uses the same public methods that power the Dash UI:
   - scatter_plots.build_scatter()      → pitch movement charts
@@ -14,12 +13,12 @@ Uses the same public methods that power the Dash UI:
 
 import io
 import tempfile
+import traceback
 from datetime import date
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
 import requests
@@ -34,10 +33,21 @@ from python_app.features.heatmaps import build_heatmap
 from python_app.features.pitch_split import compute_pitch_split
 
 # ── Color palette ────────────────────────────────────────────────────────────
-_NAVY    = TABLE_HEADER_COLOR   # "#002D72"
-_RED     = "#C8102E"
-_LGRAY   = "#f5f6fa"
-_MGRAY   = "#dcdde1"
+_NAVY  = TABLE_HEADER_COLOR   # "#002D72"
+_RED   = "#C8102E"
+_LGRAY = "#f5f6fa"
+_MGRAY = "#dcdde1"
+
+# ── Check kaleido availability at import time ────────────────────────────────
+_KALEIDO_OK = False
+try:
+    import kaleido  # noqa: F401
+    _KALEIDO_OK = True
+except ImportError:
+    print(
+        "\n⚠  kaleido is not installed — PDF charts will show placeholder text.\n"
+        "   Fix:  pip install 'kaleido>=0.2.1,<1.0'\n"
+    )
 
 
 # ── Callback ─────────────────────────────────────────────────────────────────
@@ -69,9 +79,18 @@ def download_pdf(n_clicks, selected_name, pitch_records, tag):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _plotly_to_image(fig, width=450, height=320, scale=2):
-    """Convert a Plotly figure to a numpy image array for matplotlib."""
-    img_bytes = fig.to_image(format="png", width=width, height=height, scale=scale)
-    return plt.imread(io.BytesIO(img_bytes))
+    """Convert a Plotly figure to a numpy image array for matplotlib.
+
+    Returns None if kaleido is unavailable or the conversion fails.
+    """
+    if not _KALEIDO_OK:
+        return None
+    try:
+        img_bytes = fig.to_image(format="png", width=width, height=height, scale=scale)
+        return plt.imread(io.BytesIO(img_bytes))
+    except Exception:
+        traceback.print_exc()
+        return None
 
 
 def _download_photo(url):
@@ -87,350 +106,239 @@ def _download_photo(url):
 
 
 def _draw_banner(fig, name):
-    """Draw a dark navy header banner with player name and date."""
-    ax = fig.add_axes([0, 0.93, 1, 0.07])
+    """Thin dark-navy banner at the top of the page."""
+    ax = fig.add_axes([0, 0.945, 1, 0.055])
     ax.set_facecolor(_NAVY)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.text(0.5, 0.58, f"{name}  —  Pitching Report",
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.text(0.5, 0.60, f"{name}  —  Pitching Report",
             ha="center", va="center",
-            fontsize=17, fontweight="bold", color="white",
+            fontsize=15, fontweight="bold", color="white",
             fontfamily="sans-serif")
     ax.text(0.5, 0.15, date.today().strftime("%B %d, %Y"),
             ha="center", va="center",
-            fontsize=8, color="#8eafd4", fontfamily="sans-serif")
+            fontsize=7, color="#8eafd4", fontfamily="sans-serif")
     for sp in ax.spines.values():
         sp.set_visible(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    # Red accent line
+    ax.set_xticks([]); ax.set_yticks([])
     fig.add_artist(plt.Line2D(
-        [0, 1], [0.93, 0.93],
-        color=_RED, linewidth=2.5, transform=fig.transFigure, zorder=5,
+        [0, 1], [0.945, 0.945],
+        color=_RED, linewidth=2, transform=fig.transFigure, zorder=5,
     ))
 
 
-def _draw_section_label(fig, y, text):
-    """Draw a small section header label at figure-coordinate *y*."""
+def _section_label(fig, y, text):
+    """Small section heading at figure-y coordinate."""
     fig.text(0.06, y, text,
-             fontsize=8.5, fontweight="bold", color=_NAVY,
+             fontsize=7.5, fontweight="bold", color=_NAVY,
              fontfamily="sans-serif")
     fig.add_artist(plt.Line2D(
-        [0.05, 0.95], [y - 0.005, y - 0.005],
-        color=_MGRAY, linewidth=0.7, transform=fig.transFigure,
+        [0.05, 0.95], [y - 0.004, y - 0.004],
+        color=_MGRAY, linewidth=0.6, transform=fig.transFigure,
     ))
 
 
-def _render_table(ax, df, title=""):
-    """Render a pandas DataFrame as a styled matplotlib table on *ax*."""
+def _render_table(ax, df):
+    """Render a DataFrame as a compact styled table."""
     ax.axis("off")
     if df is None or df.empty:
         ax.text(0.5, 0.5, "No data available",
-                ha="center", va="center", fontsize=8, color="gray")
+                ha="center", va="center", fontsize=7, color="gray")
         return
 
-    display_df = df.copy()
-    for col in display_df.columns:
-        display_df[col] = display_df[col].astype(str).str[:18]
+    display = df.copy()
+    for c in display.columns:
+        display[c] = display[c].astype(str).str[:18]
 
     tbl = ax.table(
-        cellText=display_df.values.tolist(),
-        colLabels=list(display_df.columns),
-        loc="center",
-        cellLoc="center",
+        cellText=display.values.tolist(),
+        colLabels=list(display.columns),
+        loc="center", cellLoc="center",
     )
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(5)
-    tbl.scale(1, 1.05)
-    tbl.auto_set_column_width(list(range(len(display_df.columns))))
+    tbl.set_fontsize(4.5)
+    tbl.scale(1, 0.95)
+    tbl.auto_set_column_width(list(range(len(display.columns))))
 
-    for (row, col), cell in tbl.get_celld().items():
-        cell.set_linewidth(0.25)
+    for (r, c), cell in tbl.get_celld().items():
+        cell.set_linewidth(0.2)
         cell.set_edgecolor(_MGRAY)
-        if row == 0:
+        if r == 0:
             cell.set_facecolor(_NAVY)
-            cell.set_text_props(color="white", fontweight="bold", fontsize=5.5)
-        elif row % 2 == 0:
+            cell.set_text_props(color="white", fontweight="bold", fontsize=5)
+        elif r % 2 == 0:
             cell.set_facecolor(_LGRAY)
         else:
             cell.set_facecolor("white")
 
 
+def _embed_plotly(ax, plotly_fig, w=300, h=230):
+    """Convert a Plotly figure and show it on *ax*. Graceful fallback."""
+    ax.axis("off")
+    if plotly_fig is None or not plotly_fig.data:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                fontsize=6, color="gray", transform=ax.transAxes)
+        return
+    img = _plotly_to_image(plotly_fig, width=w, height=h)
+    if img is not None:
+        ax.imshow(img)
+    else:
+        ax.text(0.5, 0.5,
+                "Install kaleido to\nenable chart export",
+                ha="center", va="center", fontsize=6, color="gray",
+                transform=ax.transAxes)
+
+
 # ── PDF generation ───────────────────────────────────────────────────────────
 
 def _generate_pdf(name, player, season_stats, pitch_data, pitch_tag):
-    """Build a scouting report PDF and return the file path."""
+    """Build a single-page scouting report PDF and return the file path."""
     output_path = tempfile.mktemp(suffix=".pdf")
     has_stats = season_stats is not None and not season_stats.empty
     has_pitches = pitch_data is not None and not pitch_data.empty
 
-    # Prepare pitch data
     filtered = None
     split_df = None
-    pitch_types = []
     if has_pitches:
         filtered = pitch_data.copy()
         if pitch_tag in filtered.columns:
             filtered = filtered.dropna(subset=[pitch_tag])
             filtered = filtered[filtered[pitch_tag] != "Undefined"]
         split_df = compute_pitch_split(filtered, pitch_tag)
-        if pitch_tag in filtered.columns:
-            pitch_types = sorted(
-                t for t in filtered[pitch_tag].dropna().unique()
-                if t != "Undefined"
-            )
 
-    # Download player photo
     photo = _download_photo(player.get("photo", ""))
 
+    # --- Pre-render all Plotly images BEFORE building the PDF figure ------
+    scatter_images = []
+    if has_pitches and filtered is not None and not filtered.empty:
+        for x_col, y_col in [
+            ("horz_break", "induced_vert_break"),
+            ("rel_speed",  "induced_vert_break"),
+            ("rel_speed",  "horz_break"),
+        ]:
+            pfig = build_scatter(filtered, x_col, y_col, pitch_tag)
+            pfig.update_layout(margin=dict(l=40, r=10, t=28, b=40))
+            scatter_images.append(_plotly_to_image(pfig, width=290, height=220))
+
+    # --- Build PDF --------------------------------------------------------
     with PdfPages(output_path) as pdf:
-        _build_main_page(
+        _build_page(
             pdf, name, player, photo,
             has_stats, season_stats,
-            has_pitches, filtered, split_df, pitch_tag,
+            has_pitches, split_df,
+            scatter_images,
         )
-        if has_pitches and pitch_types:
-            _build_heatmap_pages(pdf, name, filtered, pitch_tag, pitch_types)
 
     return output_path
 
 
-# ── Page 1 ───────────────────────────────────────────────────────────────────
-
-def _build_main_page(
+def _build_page(
     pdf, name, player, photo,
     has_stats, season_stats,
-    has_pitches, filtered, split_df, pitch_tag,
+    has_pitches, split_df,
+    scatter_images,
 ):
     """
-    Portrait letter page (8.5 × 11 in):
+    ONE portrait letter page (8.5 × 11 in), top-to-bottom:
 
-    ┌──────────────────────────────────┐
-    │  ██  {Name} — Pitching Report ██ │  banner
-    │  ═══════════════════════════════  │  accent line
-    │                                  │
-    │  PITCHER INFORMATION             │  section label
-    │  ┌───────┬───────────────────┐   │
-    │  │ Photo │  Bio   │  Season  │   │
-    │  │       │  Info  │  Stats   │   │
-    │  └───────┴───────────────────┘   │
-    │                                  │
-    │  PITCH MOVEMENT                  │  section label
-    │  ┌──────┬──────┬──────┐          │
-    │  │ sc 1 │ sc 2 │ sc 3 │          │
-    │  └──────┴──────┴──────┘          │
-    │                                  │
-    │  PITCH USAGE BY COUNT            │  section label
-    │  ┌────────────────────────────┐  │
-    │  │  split table               │  │
-    │  └────────────────────────────┘  │
-    └──────────────────────────────────┘
+      Banner
+      ── PITCHER INFORMATION ──
+      [Photo]  Bio text
+      ── SEASON STATS ──
+      Stats table
+      ── PITCH MOVEMENT ──
+      [Scatter 1] [Scatter 2] [Scatter 3]
+      ── PITCH USAGE BY COUNT ──
+      Split table
+      Footer
     """
     fig = plt.figure(figsize=(8.5, 11), facecolor="white")
-
-    # ── Banner ────────────────────────────────────────────────────────────
     _draw_banner(fig, name)
 
-    # ── Content grid (3 rows) ─────────────────────────────────────────────
+    # 4-row grid — very tight
     gs = fig.add_gridspec(
-        nrows=3, ncols=1,
-        height_ratios=[1.4, 2.8, 1.8],
-        hspace=0.22,
-        top=0.895, bottom=0.025, left=0.05, right=0.95,
+        nrows=4, ncols=1,
+        height_ratios=[1.1, 0.7, 1.8, 1.6],
+        hspace=0.08,
+        top=0.925, bottom=0.02, left=0.05, right=0.95,
     )
 
-    # ── Row 0 — Pitcher info  ─────────────────────────────────────────────
-    _draw_section_label(fig, 0.905, "PITCHER INFORMATION")
+    # ── Row 0 — Photo + bio ──────────────────────────────────────────────
+    _section_label(fig, 0.935, "PITCHER INFORMATION")
 
-    top = gs[0].subgridspec(
-        1, 3, wspace=0.08, width_ratios=[0.8, 1.0, 3.0],
-    )
+    row0 = gs[0].subgridspec(1, 2, wspace=0.06, width_ratios=[1, 3.5])
 
-    # Photo
-    ax_photo = fig.add_subplot(top[0, 0])
+    # Photo — small, left
+    ax_photo = fig.add_subplot(row0[0, 0])
     ax_photo.axis("off")
     if photo is not None:
-        ax_photo.imshow(photo, aspect="equal")
+        ax_photo.imshow(photo, aspect="auto")
         for sp in ax_photo.spines.values():
-            sp.set_visible(True)
-            sp.set_color(_MGRAY)
-            sp.set_linewidth(1)
+            sp.set_visible(True); sp.set_color(_MGRAY); sp.set_linewidth(0.8)
     else:
         ax_photo.set_facecolor(_LGRAY)
-        ax_photo.text(0.5, 0.5, "No photo",
-                      ha="center", va="center", fontsize=8, color="gray",
-                      transform=ax_photo.transAxes)
-        for sp in ax_photo.spines.values():
-            sp.set_visible(True)
-            sp.set_color(_MGRAY)
-            sp.set_linewidth(0.5)
+        ax_photo.text(0.5, 0.5, "No photo", ha="center", va="center",
+                      fontsize=7, color="gray", transform=ax_photo.transAxes)
 
-    # Bio info — compact single-line style
-    ax_bio = fig.add_subplot(top[0, 1])
+    # Bio — right of photo, compact key-value pairs
+    ax_bio = fig.add_subplot(row0[0, 1])
     ax_bio.axis("off")
     fields = [
-        ("Name",     player.get("full_name", "")),
-        ("Team",     player.get("teamname", "")),
-        ("Throws",   player.get("throws", "")),
-        ("Bats",     player.get("bats", "")),
-        ("Height",   player.get("height", "")),
-        ("Weight",   player.get("weight", "")),
-        ("Hometown", player.get("hometown", "")),
+        ("Name",   player.get("full_name", "")),
+        ("Team",   player.get("teamname", "")),
+        ("Throws", player.get("throws", "")),
+        ("Bats",   player.get("bats", "")),
+        ("Ht/Wt", f"{player.get('height', '')} / {player.get('weight', '')}"),
+        ("From",   player.get("hometown", "")),
     ]
-    bio_lines = [f"{k}:  {v}" for k, v in fields if v]
-    bio_text = "\n".join(bio_lines)
-    ax_bio.text(0.05, 0.92, bio_text, transform=ax_bio.transAxes,
-                fontsize=6, verticalalignment="top",
-                fontfamily="sans-serif", color="#333333",
-                linespacing=1.8,
-                bbox=dict(boxstyle="round,pad=0.4", facecolor=_LGRAY,
-                          edgecolor=_MGRAY, linewidth=0.5))
+    y = 0.90
+    for label, val in fields:
+        if not val or val.strip() == "/":
+            continue
+        ax_bio.text(0.01, y, f"{label}:", transform=ax_bio.transAxes,
+                    fontsize=6.5, fontweight="bold", color=_NAVY,
+                    fontfamily="sans-serif", va="top")
+        ax_bio.text(0.12, y, str(val), transform=ax_bio.transAxes,
+                    fontsize=6.5, color="#333", fontfamily="sans-serif", va="top")
+        y -= 0.16
 
-    # Season stats table
-    ax_stats = fig.add_subplot(top[0, 2])
+    # ── Row 1 — Season stats table ───────────────────────────────────────
+    bb1 = gs[1].get_position(fig)
+    _section_label(fig, bb1.y1 + 0.008, "SEASON STATS")
+
+    ax_stats = fig.add_subplot(gs[1])
     _render_table(ax_stats, season_stats)
 
-    # ── Row 1 — Scatter plots  ────────────────────────────────────────────
-    # Section label y ≈ top of row 1 in figure coordinates
-    _draw_section_label(fig, _row_top(gs, 1, fig), "PITCH MOVEMENT")
+    # ── Row 2 — Scatter plots ────────────────────────────────────────────
+    bb2 = gs[2].get_position(fig)
+    _section_label(fig, bb2.y1 + 0.008, "PITCH MOVEMENT")
 
-    if has_pitches and filtered is not None and not filtered.empty:
-        scatter_gs = gs[1].subgridspec(1, 3, wspace=0.04)
-        scatter_configs = [
-            ("horz_break", "induced_vert_break"),
-            ("rel_speed",  "induced_vert_break"),
-            ("rel_speed",  "horz_break"),
-        ]
-        for j, (x_col, y_col) in enumerate(scatter_configs):
-            ax = fig.add_subplot(scatter_gs[0, j])
-            plotly_fig = build_scatter(filtered, x_col, y_col, pitch_tag)
-            if plotly_fig.data:
-                try:
-                    img = _plotly_to_image(plotly_fig, width=340, height=260)
-                    ax.imshow(img)
-                except Exception:
-                    ax.text(0.5, 0.5, "Chart unavailable",
-                            ha="center", va="center", fontsize=7,
-                            transform=ax.transAxes, color="gray")
-            else:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                        fontsize=7, transform=ax.transAxes, color="gray")
-            ax.axis("off")
-    else:
-        ax_no = fig.add_subplot(gs[1])
-        ax_no.axis("off")
-        ax_no.text(0.5, 0.5, "No pitch data available",
-                   ha="center", va="center", fontsize=9, color="gray")
+    scatter_gs = gs[2].subgridspec(1, 3, wspace=0.02)
+    for j in range(3):
+        ax = fig.add_subplot(scatter_gs[0, j])
+        ax.axis("off")
+        if j < len(scatter_images) and scatter_images[j] is not None:
+            ax.imshow(scatter_images[j])
+        elif has_pitches:
+            ax.text(0.5, 0.5,
+                    "Install kaleido to\nenable chart export",
+                    ha="center", va="center", fontsize=6, color="gray",
+                    transform=ax.transAxes)
+        else:
+            ax.text(0.5, 0.5, "No pitch data", ha="center", va="center",
+                    fontsize=6, color="gray", transform=ax.transAxes)
 
-    # ── Row 2 — Pitch split table  ────────────────────────────────────────
-    _draw_section_label(fig, _row_top(gs, 2, fig), "PITCH USAGE BY COUNT")
+    # ── Row 3 — Pitch split table ────────────────────────────────────────
+    bb3 = gs[3].get_position(fig)
+    _section_label(fig, bb3.y1 + 0.008, "PITCH USAGE BY COUNT")
 
-    ax_split = fig.add_subplot(gs[2])
+    ax_split = fig.add_subplot(gs[3])
     _render_table(ax_split, split_df)
 
-    # ── Footer ────────────────────────────────────────────────────────────
-    fig.add_artist(plt.Line2D(
-        [0.05, 0.95], [0.018, 0.018],
-        color=_MGRAY, linewidth=0.5, transform=fig.transFigure,
-    ))
-    fig.text(0.5, 0.007,
+    # ── Footer ───────────────────────────────────────────────────────────
+    fig.text(0.5, 0.005,
              "Generated by SLUGGER Pitching Widget",
-             ha="center", fontsize=5.5, color="#aaaaaa",
+             ha="center", fontsize=5, color="#aaa",
              fontfamily="sans-serif", style="italic")
 
     pdf.savefig(fig)
     plt.close(fig)
-
-
-def _row_top(gs, row_idx, fig):
-    """Return the figure-coordinate y of the top of gridspec row *row_idx*."""
-    renderer = fig.canvas.get_renderer()
-    bb = gs[row_idx].get_position(fig)
-    return bb.y1 + 0.012
-
-
-# ── Page 2+: heatmaps ───────────────────────────────────────────────────────
-
-def _build_heatmap_pages(pdf, name, filtered, pitch_tag, pitch_types):
-    """
-    Heatmap pages (portrait letter) — one row per pitch type,
-    three columns: vs All Batters · vs RHB · vs LHB.
-    Fits up to 3 pitch types per page.
-    """
-    ROWS_PER_PAGE = 3
-
-    for page_start in range(0, len(pitch_types), ROWS_PER_PAGE):
-        page_types = pitch_types[page_start:page_start + ROWS_PER_PAGE]
-        n_rows = len(page_types)
-
-        fig = plt.figure(figsize=(8.5, 11), facecolor="white")
-
-        # Banner
-        ax_b = fig.add_axes([0, 0.93, 1, 0.07])
-        ax_b.set_facecolor(_NAVY)
-        ax_b.set_xlim(0, 1)
-        ax_b.set_ylim(0, 1)
-        ax_b.text(0.5, 0.58, f"{name}  —  Pitching Heatmaps",
-                  ha="center", va="center",
-                  fontsize=15, fontweight="bold", color="white",
-                  fontfamily="sans-serif")
-        for sp in ax_b.spines.values():
-            sp.set_visible(False)
-        ax_b.set_xticks([])
-        ax_b.set_yticks([])
-        fig.add_artist(plt.Line2D(
-            [0, 1], [0.93, 0.93],
-            color=_RED, linewidth=2.5, transform=fig.transFigure, zorder=5,
-        ))
-
-        gs = fig.add_gridspec(
-            nrows=n_rows, ncols=3, wspace=0.06, hspace=0.25,
-            top=0.90, bottom=0.03, left=0.05, right=0.95,
-        )
-
-        for row_idx, ptype in enumerate(page_types):
-            if pitch_tag in filtered.columns:
-                pt_df = filtered[filtered[pitch_tag] == ptype]
-            else:
-                pt_df = filtered
-
-            batter_filters = [
-                (pt_df, f"{ptype} vs All Batters"),
-                (
-                    pt_df[pt_df["batter_side"] == "Right"]
-                    if "batter_side" in pt_df.columns
-                    else pd.DataFrame(),
-                    f"{ptype} vs RHB",
-                ),
-                (
-                    pt_df[pt_df["batter_side"] == "Left"]
-                    if "batter_side" in pt_df.columns
-                    else pd.DataFrame(),
-                    f"{ptype} vs LHB",
-                ),
-            ]
-
-            for col_idx, (sub_df, title) in enumerate(batter_filters):
-                ax = fig.add_subplot(gs[row_idx, col_idx])
-                plotly_fig = build_heatmap(sub_df)
-                plotly_fig.update_layout(
-                    title=dict(text=title, font=dict(size=10)),
-                    margin=dict(l=5, r=5, t=30, b=5),
-                )
-                try:
-                    img = _plotly_to_image(plotly_fig, width=300, height=280)
-                    ax.imshow(img)
-                except Exception:
-                    ax.text(0.5, 0.5, "Chart unavailable",
-                            ha="center", va="center", fontsize=7,
-                            transform=ax.transAxes, color="gray")
-                ax.axis("off")
-
-        # Footer
-        fig.text(0.5, 0.007,
-                 "Generated by SLUGGER Pitching Widget",
-                 ha="center", fontsize=5.5, color="#aaaaaa",
-                 fontfamily="sans-serif", style="italic")
-
-        pdf.savefig(fig)
-        plt.close(fig)
