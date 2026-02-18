@@ -1,9 +1,14 @@
 """
-Centralized configuration for the ALPB Pitching Widget.
+Centralised configuration for the ALPB Pitching Widget.
 
 Single source of truth for API keys, URLs, season settings,
-pitch type colors, and axis labels used across all modules.
+pitch-type colours, axis labels, and UI styling constants.
+
+The colour palette defined here is shared by **both** the Dash web UI
+and the matplotlib PDF export so they always look consistent.
 """
+
+from __future__ import annotations
 
 # ── Pointstreak API ──────────────────────────────────────────────────────────
 POINTSTREAK_API_KEY = "vIpQsngDfc6Y7WVgAcTt"
@@ -16,53 +21,60 @@ ALPB_BASE_URL = "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI"
 
 # ── Season / roster filters ─────────────────────────────────────────────────
 DEFAULT_SEASON_ID = "34104"
-EXCLUDED_TEAMS = {"Staten Island Ferry Hawks", "Long Island Black Sox"}
+EXCLUDED_TEAMS: set[str] = {"Staten Island Ferry Hawks", "Long Island Black Sox"}
 
-# ── Pitch type colors (shared by Plotly graphs and matplotlib PDF) ───────────
-PITCH_COLORS = {
-    "Fastball": "red",
-    "Four-Seam": "red",
-    "Changeup": "blue",
-    "ChangeUp": "blue",
-    "Sinker": "green",
-    "Curveball": "brown",
-    "Slider": "purple",
-    "Splitter": "black",
-    "Cutter": "pink",
-    "Untagged": "gray",
+# ── Brand colours (shared by Dash UI and PDF export) ─────────────────────────
+BRAND_NAVY:       str = "#002D72"
+BRAND_RED:        str = "#C8102E"
+BRAND_LIGHT_GRAY: str = "#f5f6fa"
+BRAND_MID_GRAY:   str = "#dcdde1"
+
+# Legacy alias used by existing code
+TABLE_HEADER_COLOR: str = BRAND_NAVY
+
+# ── Pitch-type colours (shared by Plotly graphs and matplotlib PDF) ──────────
+PITCH_COLORS: dict[str, str] = {
+    "Fastball":   "red",
+    "Four-Seam":  "red",
+    "Changeup":   "blue",
+    "ChangeUp":   "blue",
+    "Sinker":     "green",
+    "Curveball":  "brown",
+    "Slider":     "purple",
+    "Splitter":   "black",
+    "Cutter":     "pink",
+    "Untagged":   "gray",
 }
 
 # ── Axis display labels ─────────────────────────────────────────────────────
-AXIS_LABELS = {
+AXIS_LABELS: dict[str, str] = {
     "induced_vert_break": "Induced Vertical Break (inches)",
-    "horz_break": "Horizontal Break (inches)",
-    "rel_speed": "Velocity (mph)",
+    "horz_break":         "Horizontal Break (inches)",
+    "rel_speed":          "Velocity (mph)",
 }
 
-AXIS_SHORT_LABELS = {
+AXIS_SHORT_LABELS: dict[str, str] = {
     "induced_vert_break": "Ind. Vert. Break",
-    "horz_break": "Horz. Break",
-    "rel_speed": "Velocity",
+    "horz_break":         "Horz. Break",
+    "rel_speed":          "Velocity",
 }
 
-# ── UI styling ───────────────────────────────────────────────────────────────
-TABLE_HEADER_COLOR = "#002D72"
-
-TABLE_STYLE_HEADER = {
-    "backgroundColor": TABLE_HEADER_COLOR,
+# ── Dash DataTable styling ───────────────────────────────────────────────────
+TABLE_STYLE_HEADER: dict = {
+    "backgroundColor": BRAND_NAVY,
     "color": "white",
     "fontWeight": "bold",
 }
 
-TABLE_STYLE_CELL = {
+TABLE_STYLE_CELL: dict = {
     "textAlign": "center",
     "padding": "5px",
     "fontSize": "12px",
 }
 
-TABLE_STYLE_DATA_CONDITIONAL = [
-    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+TABLE_STYLE_DATA_CONDITIONAL: list[dict] = [
+    {"if": {"row_index": "odd"}, "backgroundColor": BRAND_LIGHT_GRAY},
 ]
 
-# ── Parallel fetch settings ──────────────────────────────────────────────────
-MAX_WORKERS = 8
+# ── Parallel-fetch settings ──────────────────────────────────────────────────
+MAX_WORKERS: int = 8

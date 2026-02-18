@@ -1,1 +1,1 @@
-"""ALPB Pitching Widget - Python Dash application."""
+"""ALPB Pitching Widget — Python Dash application."""
