@@ -1,49 +1,77 @@
 """
-Pitch movement scatter plots.
+Pitch-movement scatter plots.
 
-Layout: two side-by-side scatter plots (break-vs-velocity, vert-vs-horz break).
-Callback: re-renders when pitch data, break type, or tagging method changes.
+Layout   : two side-by-side cards (velocity vs break, vert-break vs horz-break).
+Callback : re-renders when pitch data, break type, or tagging method changes.
+Builder  : ``build_scatter`` is the single source of truth — also called by
+           ``pdf_export`` for the PDF report.
 """
 
-import plotly.graph_objects as go
+from __future__ import annotations
+
 import pandas as pd
+import plotly.graph_objects as go
 
-from dash import dcc, callback, Input, Output
+from dash import Input, Output, callback, dcc
 
-from python_app.config import PITCH_COLORS, AXIS_LABELS
+from python_app.config import AXIS_LABELS, PITCH_COLORS
 from python_app.lib.styles import info_card
 
 
-# ── Layout ───────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Layout fragments (consumed by app.py)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def layout_vel():
-    return info_card(
-        "Vertical Break vs Velocity",
-        dcc.Graph(id="vel-plot"),
-    )
+def layout_vel() -> info_card:
+    """Card wrapping the velocity scatter plot."""
+    return info_card("Vertical Break vs Velocity", dcc.Graph(id="vel-plot"))
 
 
-def layout_break():
+def layout_break() -> info_card:
+    """Card wrapping the break scatter plot."""
     return info_card(
         "Induced Vertical Break vs Horizontal Break",
         dcc.Graph(id="break-plot"),
     )
 
 
-# ── Chart builder ────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Public chart builder
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def build_scatter(df, x_axis, y_axis, tag):
-    """Build a Plotly scatter plot of pitch data."""
+def build_scatter(
+    df: pd.DataFrame,
+    x_axis: str,
+    y_axis: str,
+    tag: str,
+) -> go.Figure:
+    """Build a colour-coded Plotly scatter of pitch data.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Pitch-level records (must contain *x_axis*, *y_axis*, and *tag* columns).
+    x_axis, y_axis : str
+        Column names mapped to the X / Y axes.
+    tag : str
+        Column used for pitch-type colouring (e.g. ``"auto_pitch_type"``).
+
+    Returns
+    -------
+    go.Figure
+        Ready-to-display Plotly figure (empty if input is invalid).
+    """
     if df is None or df.empty or x_axis not in df.columns or y_axis not in df.columns:
         return go.Figure()
 
     plot_df = df.copy()
-    if tag in plot_df.columns:
-        plot_df["_tag"] = plot_df[tag].apply(
+    plot_df["_tag"] = (
+        plot_df[tag].apply(
             lambda v: "Untagged" if pd.isna(v) or v == "Undefined" else str(v)
         )
-    else:
-        plot_df["_tag"] = "Untagged"
+        if tag in plot_df.columns
+        else "Untagged"
+    )
 
     fig = go.Figure()
     for ptype in sorted(plot_df["_tag"].unique()):
@@ -53,7 +81,11 @@ def build_scatter(df, x_axis, y_axis, tag):
             y=pd.to_numeric(subset[y_axis], errors="coerce"),
             mode="markers",
             name=ptype,
-            marker=dict(color=PITCH_COLORS.get(ptype, "gray"), size=6, opacity=0.7),
+            marker=dict(
+                color=PITCH_COLORS.get(ptype, "gray"),
+                size=6,
+                opacity=0.7,
+            ),
         ))
 
     fig.update_layout(
@@ -67,7 +99,9 @@ def build_scatter(df, x_axis, y_axis, tag):
     return fig
 
 
-# ── Callbacks ────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Dash callbacks
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @callback(
     Output("vel-plot", "figure"),
@@ -75,9 +109,13 @@ def build_scatter(df, x_axis, y_axis, tag):
     Input("break-type", "value"),
     Input("tag-choice", "value"),
 )
-def update_vel_plot(pitch_records, break_type, tag):
+def update_vel_plot(
+    pitch_records: list[dict] | None,
+    break_type: str,
+    tag: str,
+) -> go.Figure:
     if not pitch_records:
-        return {}
+        return go.Figure()
     return build_scatter(pd.DataFrame(pitch_records), "rel_speed", break_type, tag)
 
 
@@ -86,7 +124,12 @@ def update_vel_plot(pitch_records, break_type, tag):
     Input("pitch-data-store", "data"),
     Input("tag-choice", "value"),
 )
-def update_break_plot(pitch_records, tag):
+def update_break_plot(
+    pitch_records: list[dict] | None,
+    tag: str,
+) -> go.Figure:
     if not pitch_records:
-        return {}
-    return build_scatter(pd.DataFrame(pitch_records), "horz_break", "induced_vert_break", tag)
+        return go.Figure()
+    return build_scatter(
+        pd.DataFrame(pitch_records), "horz_break", "induced_vert_break", tag,
+    )

@@ -1,32 +1,36 @@
 """
-Data caching service.
+Data-caching service.
 
-Wraps the raw API module so that every caller gets automatic caching.
-Callbacks and features should import from here, never from lib.api directly.
+Wraps the raw :mod:`python_app.lib.api` module so that every caller gets
+transparent, in-memory caching.  Feature modules should import from here
+— never directly from ``lib.api``.
 """
+
+from __future__ import annotations
 
 import pandas as pd
 
 from python_app.lib.api import (
     fetch_all_pitchers,
-    fetch_pitching_stats,
     fetch_alpb_pitcher_info,
     fetch_alpb_pitches,
+    fetch_pitching_stats,
 )
 
 
 class DataCache:
     """Loads, caches, and provides all pitcher-related data."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._pitchers_df: pd.DataFrame = pd.DataFrame()
         self._alpb_ids: dict[str, str | None] = {}
         self._pitch_data: dict[str, list[dict] | None] = {}
         self._season_stats: dict[str, pd.DataFrame | None] = {}
 
-    # ── Roster ───────────────────────────────────────────────────────────
+    # ── Roster ────────────────────────────────────────────────────────────
 
     def load_roster(self) -> None:
+        """Fetch and cache the full league roster."""
         self._pitchers_df = fetch_all_pitchers()
 
     @property
@@ -39,15 +43,17 @@ class DataCache:
             return []
         return self._pitchers_df["full_name"].tolist()
 
-    def get_player(self, full_name: str) -> pd.Series | None:
+    def get_player(self, full_name: str | None) -> pd.Series | None:
+        """Return the roster row for *full_name*, or *None*."""
         if self._pitchers_df.empty or not full_name:
             return None
         rows = self._pitchers_df[self._pitchers_df["full_name"] == full_name]
         return rows.iloc[0] if not rows.empty else None
 
-    # ── Season stats ─────────────────────────────────────────────────────
+    # ── Season stats ──────────────────────────────────────────────────────
 
     def get_season_stats(self, playerlinkid: str) -> pd.DataFrame | None:
+        """Return cached season stats, fetching on first access."""
         if playerlinkid in self._season_stats:
             return self._season_stats[playerlinkid]
         try:
@@ -57,9 +63,10 @@ class DataCache:
         self._season_stats[playerlinkid] = stats
         return stats
 
-    # ── ALPB player ID ───────────────────────────────────────────────────
+    # ── ALPB player ID ────────────────────────────────────────────────────
 
     def get_alpb_id(self, full_name: str) -> str | None:
+        """Return the ALPB Trackman player ID for *full_name*."""
         if full_name in self._alpb_ids:
             return self._alpb_ids[full_name]
         player = self.get_player(full_name)
@@ -70,9 +77,10 @@ class DataCache:
         self._alpb_ids[full_name] = pid
         return pid
 
-    # ── Pitch-by-pitch data ──────────────────────────────────────────────
+    # ── Pitch-by-pitch data ───────────────────────────────────────────────
 
     def get_pitch_data(self, player_id: str) -> list[dict] | None:
+        """Return raw pitch records for *player_id*, fetching on first access."""
         if not player_id:
             return None
         if player_id in self._pitch_data:
@@ -86,5 +94,5 @@ class DataCache:
         return records
 
 
-# Singleton used by all features
+# Module-level singleton used by all features
 cache = DataCache()
