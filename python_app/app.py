@@ -111,7 +111,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                 dbc.Col(width=5),
                 dbc.Col(
                     html.Button(
-                        "📄 Download PDF",
+                        "📄 Download One-Page PDF",
                         id="download-pdf-btn",
                         className="btn btn-brand w-100",
                     ),
