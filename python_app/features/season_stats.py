@@ -40,4 +40,4 @@ def update_season_stats(selected_name: str | None):
     if stats is None or stats.empty:
         return html.P("No season stats found for this player.")
 
-    return styled_table(stats)
+    return styled_table(stats, uppercase_columns=True)

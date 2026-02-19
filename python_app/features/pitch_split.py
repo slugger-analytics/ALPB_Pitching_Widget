@@ -93,4 +93,8 @@ def update_pitch_table(
     split_df = compute_pitch_split(pd.DataFrame(pitch_records), tag)
     if split_df.empty:
         return html.P("No pitch split data available.")
-    return styled_table(split_df, page_size=12)
+    return styled_table(
+        split_df,
+        page_size=12,
+        highlight_row_max_from_col=1,
+    )

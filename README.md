@@ -24,19 +24,26 @@ Data is accessed via their APIs using Python's `requests` library, with paginati
 
 The Python version lives in `python_app/` and uses [Dash](https://dash.plotly.com/) (by Plotly) as the web framework.
 
-### Installation
+### Quick Start (From Download / Clone)
 
 ```bash
+git clone https://github.com/tanx3036/SLUGGER-Pitching-Widget.git
+cd SLUGGER-Pitching-Widget
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r python_app/requirements.txt
-```
-
-### Running
-
-```bash
 python python_app/app.py
 ```
 
 The app will be available at `http://localhost:8050`.
+
+### Run Again Later
+
+```bash
+cd SLUGGER-Pitching-Widget
+source .venv/bin/activate
+python python_app/app.py
+```
 
 ### Project Structure
 
@@ -82,4 +89,3 @@ install.packages(c(
   "jsonlite", "patchwork", "rmarkdown", "rsconnect", "shiny",
   "shinyjs", "tibble", "tidyr"
 ))
-
