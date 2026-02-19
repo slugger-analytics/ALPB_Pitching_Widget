@@ -220,6 +220,7 @@ def _render_table(
     *,
     fill_bbox: bool = False,
     highlight_row_max: bool = False,
+    uppercase_headers: bool = False,
 ) -> None:
     """Render a DataFrame as a compact, styled matplotlib table."""
     ax.axis("off")
@@ -231,6 +232,8 @@ def _render_table(
         return
 
     display = df.copy()
+    if uppercase_headers:
+        display.columns = [str(c).upper() for c in display.columns]
     for col in display.columns:
         display[col] = display[col].astype(str).str[:24]
 
@@ -617,7 +620,7 @@ def _layout_pitcher_card(
 
     rendered_lines: list[tuple[str, str, bool]] = []
     for label, value in valid:
-        wrapped = textwrap.wrap(value, width=22) or [value]
+        wrapped = textwrap.wrap(value, width=18) or [value]
         rendered_lines.append((f"{label}:", wrapped[0], True))
         for cont in wrapped[1:]:
             rendered_lines.append(("", cont, False))
@@ -641,20 +644,20 @@ def _layout_pitcher_card(
     for label, value, main_line in rendered_lines:
         if main_line:
             ax_bio.text(
-                0.02, y, label,
+                0.04, y, label,
                 ha="left", va="center",
                 fontsize=6.1, fontweight="bold", color=_NAVY,
                 transform=ax_bio.transAxes,
             )
             ax_bio.text(
-                0.35, y, value,
+                0.48, y, value,
                 ha="left", va="center",
                 fontsize=6.1, color="#333",
                 transform=ax_bio.transAxes,
             )
         else:
             ax_bio.text(
-                0.35, y, value,
+                0.48, y, value,
                 ha="left", va="center",
                 fontsize=6.0, color="#333",
                 transform=ax_bio.transAxes,
@@ -671,7 +674,13 @@ def _layout_stats_card(
     _draw_navy_header(fig, x0, y0 + h - _HDR, w, _HDR, "Season Stats")
 
     ax = fig.add_axes([x0 + _PAD, y0 + _PAD, w - 2 * _PAD, h - _HDR - 2 * _PAD])
-    _render_table(ax, season_stats, fontsize=6, fill_bbox=True)
+    _render_table(
+        ax,
+        season_stats,
+        fontsize=6,
+        fill_bbox=True,
+        uppercase_headers=True,
+    )
 
 
 def _draw_footer(fig: plt.Figure) -> None:
