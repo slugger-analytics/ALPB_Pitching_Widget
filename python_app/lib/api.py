@@ -66,8 +66,20 @@ def fetch_all_pitchers(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
 
     df = pd.DataFrame(all_pitchers)
     df = df[~df["teamname"].isin(EXCLUDED_TEAMS)]
+
+    # Drop rows without a usable player name so the dropdown never shows
+    # placeholders like "Unknown" / empty names.
+    df["fname"] = df["fname"].fillna("").astype(str).str.strip()
+    df["lname"] = df["lname"].fillna("").astype(str).str.strip()
+    bad_name_tokens = {"", "unknown", "nan", "none", "null", "/"}
+    valid_name_mask = (
+        ~df["fname"].str.lower().isin(bad_name_tokens)
+        & ~df["lname"].str.lower().isin(bad_name_tokens)
+    )
+    df = df[valid_name_mask]
+
     df = df.sort_values("lname").reset_index(drop=True)
-    df["full_name"] = df["fname"] + " " + df["lname"]
+    df["full_name"] = (df["fname"] + " " + df["lname"]).str.strip()
     return df
 
 
@@ -129,32 +141,19 @@ def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
         return None
     url = f"{ALPB_BASE_URL}/pitches"
 
-    try:
-        res = _alpb_session.get(url, params={"pitcher_id": player_id, "page": 1})
-        if res.status_code != 200:
-            return None
-        parsed = res.json()
-    except Exception:
+    # `/pitches` pagination metadata is inconsistent across API versions.
+    # Pull sequentially until an empty page to avoid silent truncation.
+    all_data: list[dict] = []
+    page = 1
+    while True:
+        page_data = _fetch_alpb_page(url, player_id, page)
+        if not page_data:
+            break
+        all_data.extend(page_data)
+        page += 1
+
+    if not all_data:
         return None
-
-    data = parsed.get("data")
-    if not data:
-        return None
-
-    all_data: list = list(data)
-    total_pages: int = parsed.get("meta", {}).get("total", 1)
-
-    if total_pages > 1:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {
-                pool.submit(_fetch_alpb_page, url, player_id, p): p
-                for p in range(2, total_pages + 1)
-            }
-            for fut in as_completed(futures):
-                page_data = fut.result()
-                if page_data:
-                    all_data.extend(page_data)
-
     return pd.DataFrame(all_data)
 
 

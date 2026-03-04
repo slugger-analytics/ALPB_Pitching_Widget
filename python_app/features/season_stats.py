@@ -30,9 +30,9 @@ def layout():
     Output("season-stats-output", "children"),
     Input("selected-player", "value"),
 )
-def update_season_stats(selected_name: str | None):
+def update_season_stats(selected_playerlinkid: str | None):
     """Refresh the stats table when a new pitcher is chosen."""
-    player = cache.get_player(selected_name)
+    player = cache.get_player(selected_playerlinkid)
     if player is None:
         return "Select a pitcher."
 

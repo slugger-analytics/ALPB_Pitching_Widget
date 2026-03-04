@@ -44,9 +44,9 @@ def layout():
     Output("player-info", "children"),
     Input("selected-player", "value"),
 )
-def update_player_info(selected_name: str | None):
+def update_player_info(selected_playerlinkid: str | None):
     """Refresh the player card when a new pitcher is chosen."""
-    player = cache.get_player(selected_name)
+    player = cache.get_player(selected_playerlinkid)
     if player is None:
         return "", ""
 
