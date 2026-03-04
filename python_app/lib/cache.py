@@ -38,16 +38,57 @@ class DataCache:
         return self._pitchers_df
 
     @property
+    def team_names(self) -> list[str]:
+        """Return sorted, non-empty team names from the roster."""
+        if self._pitchers_df.empty or "teamname" not in self._pitchers_df.columns:
+            return []
+        teams = (
+            self._pitchers_df["teamname"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+        bad = {"", "unknown", "nan", "none", "null", "/"}
+        return sorted(t for t in teams.unique().tolist() if t.lower() not in bad)
+
+    @property
     def pitcher_names(self) -> list[str]:
         if self._pitchers_df.empty:
             return []
-        return self._pitchers_df["full_name"].tolist()
+        names = (
+            self._pitchers_df["full_name"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+        bad = {"", "unknown", "nan", "none", "null", "/"}
+        return [n for n in names.tolist() if n.lower() not in bad]
 
-    def get_player(self, full_name: str | None) -> pd.Series | None:
-        """Return the roster row for *full_name*, or *None*."""
-        if self._pitchers_df.empty or not full_name:
+    def get_players(self, team_name: str | None = None) -> pd.DataFrame:
+        """Return roster rows, optionally filtered by *team_name*."""
+        if self._pitchers_df.empty:
+            return pd.DataFrame()
+        if not team_name:
+            return self._pitchers_df
+        return self._pitchers_df[self._pitchers_df["teamname"] == team_name]
+
+    def get_player_by_linkid(self, playerlinkid: str | None) -> pd.Series | None:
+        """Return the roster row for *playerlinkid*, or *None*."""
+        if self._pitchers_df.empty or not playerlinkid:
             return None
-        rows = self._pitchers_df[self._pitchers_df["full_name"] == full_name]
+        rows = self._pitchers_df[
+            self._pitchers_df["playerlinkid"].astype(str) == str(playerlinkid)
+        ]
+        return rows.iloc[0] if not rows.empty else None
+
+    def get_player(self, identifier: str | None) -> pd.Series | None:
+        """Return the roster row for a player id (preferred) or full name."""
+        if self._pitchers_df.empty or not identifier:
+            return None
+        by_linkid = self.get_player_by_linkid(identifier)
+        if by_linkid is not None:
+            return by_linkid
+        rows = self._pitchers_df[self._pitchers_df["full_name"] == identifier]
         return rows.iloc[0] if not rows.empty else None
 
     # ── Season stats ──────────────────────────────────────────────────────
@@ -65,16 +106,20 @@ class DataCache:
 
     # ── ALPB player ID ────────────────────────────────────────────────────
 
-    def get_alpb_id(self, full_name: str) -> str | None:
-        """Return the ALPB Trackman player ID for *full_name*."""
-        if full_name in self._alpb_ids:
-            return self._alpb_ids[full_name]
-        player = self.get_player(full_name)
+    def get_alpb_id(self, playerlinkid: str | None) -> str | None:
+        """Return the ALPB Trackman player ID for a Pointstreak playerlinkid."""
+        if not playerlinkid:
+            return None
+        key = str(playerlinkid)
+        if key in self._alpb_ids:
+            return self._alpb_ids[key]
+
+        player = self.get_player_by_linkid(key)
         if player is None:
             return None
         result = fetch_alpb_pitcher_info(player["fname"], player["lname"])
         pid = result["player_id"] if result else None
-        self._alpb_ids[full_name] = pid
+        self._alpb_ids[key] = pid
         return pid
 
     # ── Pitch-by-pitch data ───────────────────────────────────────────────

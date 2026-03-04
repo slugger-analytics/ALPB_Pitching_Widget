@@ -18,7 +18,7 @@ import sys
 # works regardless of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dash import Dash, Input, Output, callback, dcc, html
+from dash import Dash, Input, Output, State, callback, dcc, html
 import dash_bootstrap_components as dbc
 import pandas as pd
 
@@ -46,6 +46,42 @@ app = Dash(
     suppress_callback_exceptions=True,
 )
 app.title = "ALPB Pitchers — Scouting Report"
+
+_ALL_TEAMS = "__ALL_TEAMS__"
+
+
+def _build_player_options(team_name: str | None) -> list[dict[str, str]]:
+    """Build dropdown options using unique ``playerlinkid`` values."""
+    team_filter = None if team_name in (None, _ALL_TEAMS) else team_name
+    df = cache.get_players(team_filter)
+    if df.empty:
+        return []
+
+    display = df.sort_values(
+        ["lname", "fname", "teamname", "playerlinkid"],
+        na_position="last",
+    )
+    show_team = team_filter is None
+    options: list[dict[str, str]] = []
+    for _, row in display.iterrows():
+        player_id = str(row.get("playerlinkid", "")).strip()
+        if player_id.lower() in {"", "nan", "none", "null"}:
+            continue
+        label = str(row.get("full_name", "")).strip()
+        team = str(row.get("teamname", "")).strip()
+        if show_team and team:
+            label = f"{label} ({team})"
+        options.append({"label": label, "value": player_id})
+    return options
+
+
+_TEAM_OPTIONS = [{"label": "All Teams", "value": _ALL_TEAMS}] + [
+    {"label": team, "value": team} for team in cache.team_names
+]
+_INITIAL_PLAYER_OPTIONS = _build_player_options(_ALL_TEAMS)
+_INITIAL_PLAYER_VALUE = (
+    _INITIAL_PLAYER_OPTIONS[0]["value"] if _INITIAL_PLAYER_OPTIONS else None
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -88,34 +124,53 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
         html.Div("Pitching Scouting Report Dashboard", className="subtitle"),
     ]),
 
-    # ── Toolbar row (selector + PDF button) ──────────────────────────────
+    # ── Toolbar row (team/player selectors + PDF buttons) ────────────────
     html.Div(className="toolbar-row", children=[
         dbc.Container(fluid=True, style={"maxWidth": "1320px"}, children=[
             dbc.Row([
                 dbc.Col(
-                    dcc.Dropdown(
-                        id="selected-player",
-                        options=[
-                            {"label": n, "value": n}
-                            for n in cache.pitcher_names
-                        ],
-                        value=(
-                            cache.pitcher_names[0]
-                            if cache.pitcher_names else None
+                    html.Div([
+                        html.Label("Team", className="toolbar-label"),
+                        dcc.Dropdown(
+                            id="selected-team",
+                            options=_TEAM_OPTIONS,
+                            value=_ALL_TEAMS,
+                            clearable=False,
+                            placeholder="Choose a Team...",
+                            style={"fontSize": "0.92rem"},
                         ),
-                        placeholder="Choose a Pitcher...",
-                        style={"fontSize": "0.92rem"},
-                    ),
-                    width=5,
+                    ]),
+                    width=3,
                 ),
-                dbc.Col(width=5),
                 dbc.Col(
-                    html.Button(
-                        "📄 Download One-Page PDF",
-                        id="download-pdf-btn",
-                        className="btn btn-brand w-100",
-                    ),
-                    width=2,
+                    html.Div([
+                        html.Label("Pitcher", className="toolbar-label"),
+                        dcc.Dropdown(
+                            id="selected-player",
+                            options=_INITIAL_PLAYER_OPTIONS,
+                            value=_INITIAL_PLAYER_VALUE,
+                            clearable=False,
+                            placeholder="Choose a Pitcher...",
+                            style={"fontSize": "0.92rem"},
+                        ),
+                    ]),
+                    width=4,
+                ),
+                dbc.Col(width=1),
+                dbc.Col(
+                    html.Div(className="d-grid gap-2", children=[
+                        html.Button(
+                            "📄 Download One-Page PDF",
+                            id="download-pdf-btn",
+                            className="btn btn-brand w-100",
+                        ),
+                        html.Button(
+                            "📚 Download Team PDF",
+                            id="download-team-pdf-btn",
+                            className="btn btn-brand-outline w-100",
+                        ),
+                    ]),
+                    width=4,
                     className="d-flex align-items-center",
                 ),
             ], className="align-items-center"),
@@ -233,9 +288,36 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @callback(Output("alpb-player-id-store", "data"), Input("selected-player", "value"))
-def lookup_alpb_id(name: str | None):
-    """Resolve the selected player name to an ALPB Trackman player ID."""
-    return cache.get_alpb_id(name) if name else None
+def lookup_alpb_id(playerlinkid: str | None):
+    """Resolve the selected Pointstreak playerlinkid to an ALPB player ID."""
+    return cache.get_alpb_id(playerlinkid) if playerlinkid else None
+
+
+@callback(
+    Output("selected-player", "options"),
+    Output("selected-player", "value"),
+    Input("selected-team", "value"),
+    State("selected-player", "value"),
+)
+def update_player_dropdown(
+    selected_team: str | None,
+    current_playerlinkid: str | None,
+):
+    """Filter player options by team and keep current selection when valid."""
+    options = _build_player_options(selected_team)
+    valid_values = {opt["value"] for opt in options}
+    if current_playerlinkid in valid_values:
+        return options, current_playerlinkid
+    next_value = options[0]["value"] if options else None
+    return options, next_value
+
+
+@callback(Output("download-team-pdf-btn", "style"), Input("selected-team", "value"))
+def toggle_team_pdf_button(selected_team: str | None):
+    """Show team-PDF button only when one specific team is selected."""
+    if not selected_team or selected_team == _ALL_TEAMS:
+        return {"display": "none"}
+    return {"display": "block"}
 
 
 @callback(Output("pitch-data-store", "data"), Input("alpb-player-id-store", "data"))

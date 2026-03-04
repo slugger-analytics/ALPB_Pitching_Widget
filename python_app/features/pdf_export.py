@@ -1,9 +1,9 @@
 """
-PDF scouting report — compact single-page letter (8.5 × 11 in, portrait).
+PDF scouting report export (single-player and team multi-page).
 
-Callback : triggered by the "Download PDF" button.
+Callback : triggered by either PDF button in the toolbar.
 Pipeline : pre-render Plotly figures → convert to raster images via kaleido
-           → compose everything onto ONE matplotlib page → save as PDF.
+           → compose everything onto matplotlib page(s) → save as PDF.
 
 Every chart and table reuses the **same public functions** that drive the
 Dash UI — nothing is re-implemented here:
@@ -33,7 +33,7 @@ import requests
 from matplotlib.backends.backend_pdf import PdfPages
 from PIL import Image
 
-from dash import Input, Output, State, callback, dcc, no_update
+from dash import Input, Output, State, callback, ctx, dcc, no_update
 
 from python_app.config import TABLE_HEADER_COLOR
 from python_app.features.heatmaps import build_heatmap
@@ -68,6 +68,7 @@ _HEATMAP_TITLES: list[str] = [
     "Pitch map vs RH Batters",
     "Pitch map vs LH Batters",
 ]
+_ALL_TEAMS = "__ALL_TEAMS__"
 
 # ── Kaleido availability (checked once at import time) ────────────────────────
 _KALEIDO_OK: bool = False
@@ -88,31 +89,94 @@ except ImportError:
 @callback(
     Output("download-pdf", "data"),
     Input("download-pdf-btn", "n_clicks"),
+    Input("download-team-pdf-btn", "n_clicks"),
     State("selected-player", "value"),
+    State("selected-team", "value"),
     State("pitch-data-store", "data"),
     State("tag-choice", "value"),
     prevent_initial_call=True,
 )
 def download_pdf(
-    n_clicks: int | None,
-    selected_name: str | None,
+    player_clicks: int | None,
+    team_clicks: int | None,
+    selected_playerlinkid: str | None,
+    selected_team: str | None,
     pitch_records: list[dict] | None,
     tag: str | None,
 ):
-    """Generate and send a single-page scouting-report PDF."""
-    if not n_clicks or not selected_name:
-        return no_update
+    """Generate and send either a player PDF or a team multi-page PDF."""
+    pitch_tag = tag or "auto_pitch_type"
+    triggered = ctx.triggered_id
 
-    player = cache.get_player(selected_name)
-    if player is None:
-        return no_update
+    if triggered == "download-pdf-btn":
+        if not player_clicks or not selected_playerlinkid:
+            return no_update
+        player = cache.get_player(selected_playerlinkid)
+        if player is None:
+            return no_update
 
-    stats = cache.get_season_stats(player["playerlinkid"])
-    pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
-    tag = tag or "auto_pitch_type"
+        selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
+        stats = cache.get_season_stats(str(player["playerlinkid"]))
+        pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
 
-    pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, tag)
-    return dcc.send_file(pdf_path, filename=f"{selected_name} Pitcher Report.pdf")
+        pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, pitch_tag)
+        filename = f"{_safe_filename(selected_name)} Pitcher Report.pdf"
+        return dcc.send_file(pdf_path, filename=filename)
+
+    if triggered == "download-team-pdf-btn":
+        if not team_clicks or not selected_team or selected_team == _ALL_TEAMS:
+            return no_update
+        team_players = cache.get_players(selected_team)
+        if team_players.empty:
+            return no_update
+
+        pdf_path = _generate_team_pdf(team_players, pitch_tag)
+        filename = f"{_safe_filename(selected_team)} Pitching Reports.pdf"
+        return dcc.send_file(pdf_path, filename=filename)
+
+    return no_update
+
+
+def _safe_filename(raw: str) -> str:
+    """Keep filenames readable and filesystem-safe."""
+    cleaned = "".join(ch for ch in str(raw) if ch.isalnum() or ch in {" ", "_", "-"})
+    return " ".join(cleaned.split()).strip() or "Report"
+
+
+def _team_sorted(players: pd.DataFrame) -> pd.DataFrame:
+    """De-duplicate then sort players for team exports."""
+    if players.empty:
+        return players
+
+    deduped = players.copy()
+    deduped["playerlinkid"] = deduped["playerlinkid"].fillna("").astype(str).str.strip()
+    deduped["full_name"] = deduped["full_name"].fillna("").astype(str).str.strip()
+
+    with_id = deduped[deduped["playerlinkid"] != ""]
+    no_id = deduped[deduped["playerlinkid"] == ""]
+
+    with_id = with_id.drop_duplicates(subset=["playerlinkid"], keep="first")
+    no_id = no_id.drop_duplicates(subset=["full_name"], keep="first")
+
+    unique_players = pd.concat([with_id, no_id], ignore_index=True)
+    return unique_players.sort_values(
+        ["lname", "fname", "full_name", "playerlinkid"],
+        na_position="last",
+    )
+
+
+def _pitch_df_for_player(player: pd.Series) -> pd.DataFrame | None:
+    """Fetch ALPB pitch-level data for one player."""
+    playerlinkid = str(player.get("playerlinkid", "")).strip()
+    if not playerlinkid:
+        return None
+    alpb_id = cache.get_alpb_id(playerlinkid)
+    if not alpb_id:
+        return None
+    records = cache.get_pitch_data(alpb_id)
+    if not records:
+        return None
+    return pd.DataFrame(records)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -319,11 +383,64 @@ def _generate_pdf(
     pitch_data: pd.DataFrame | None,
     pitch_tag: str,
 ) -> str:
-    """Build a compact, single-page scouting-report PDF and return its file path."""
+    """Build a single-player scouting-report PDF and return its file path."""
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     output_path: str = tmp.name
     tmp.close()
 
+    with PdfPages(output_path) as pdf:
+        _append_player_page(
+            pdf=pdf,
+            name=name,
+            player=player,
+            season_stats=season_stats,
+            pitch_data=pitch_data,
+            pitch_tag=pitch_tag,
+        )
+
+    return output_path
+
+
+def _generate_team_pdf(
+    team_players: pd.DataFrame,
+    pitch_tag: str,
+) -> str:
+    """Build a team multi-page PDF (one player per page)."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    output_path: str = tmp.name
+    tmp.close()
+
+    with PdfPages(output_path) as pdf:
+        for _, player in _team_sorted(team_players).iterrows():
+            name = str(player.get("full_name", "")).strip() or "Pitcher"
+            playerlinkid = str(player.get("playerlinkid", "")).strip()
+            stats = (
+                cache.get_season_stats(playerlinkid)
+                if playerlinkid else None
+            )
+            pitch_df = _pitch_df_for_player(player)
+            _append_player_page(
+                pdf=pdf,
+                name=name,
+                player=player,
+                season_stats=stats,
+                pitch_data=pitch_df,
+                pitch_tag=pitch_tag,
+            )
+
+    return output_path
+
+
+def _append_player_page(
+    *,
+    pdf: PdfPages,
+    name: str,
+    player: pd.Series,
+    season_stats: pd.DataFrame | None,
+    pitch_data: pd.DataFrame | None,
+    pitch_tag: str,
+) -> None:
+    """Assemble charts/tables and append exactly one player page to a PDF."""
     has_pitches = pitch_data is not None and not pitch_data.empty
 
     filtered: pd.DataFrame | None = None
@@ -351,21 +468,17 @@ def _generate_pdf(
             heatmap_images.append(_plotly_to_image(hfig, width=620, height=340))
 
     photo = _download_photo(player.get("photo", ""))
-
-    with PdfPages(output_path) as pdf:
-        _build_page(
-            pdf,
-            name=name,
-            player=player,
-            photo=photo,
-            season_stats=season_stats,
-            split_df=split_df,
-            scatter_images=scatter_images,
-            heatmap_images=heatmap_images,
-            has_pitches=has_pitches,
-        )
-
-    return output_path
+    _build_page(
+        pdf,
+        name=name,
+        player=player,
+        photo=photo,
+        season_stats=season_stats,
+        split_df=split_df,
+        scatter_images=scatter_images,
+        heatmap_images=heatmap_images,
+        has_pitches=has_pitches,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
