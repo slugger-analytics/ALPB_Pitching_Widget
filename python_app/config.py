@@ -20,7 +20,7 @@ ALPB_API_KEY = "IuHgm3smV65kbC6lMlMLz80DOeEkGSiV6USoQhvZ"
 ALPB_BASE_URL = "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI"
 
 # ── Season / roster filters ─────────────────────────────────────────────────
-DEFAULT_SEASON_ID = "34104"
+DEFAULT_SEASON_ID = "34102"
 EXCLUDED_TEAMS: set[str] = {"California Dogecoin", "Long Island Black Sox"}
 
 # ── Brand colours (shared by Dash UI and PDF export) ─────────────────────────
