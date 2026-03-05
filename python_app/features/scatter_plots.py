@@ -24,7 +24,7 @@ from python_app.lib.styles import info_card
 
 def layout_vel() -> info_card:
     """Card wrapping the velocity scatter plot."""
-    return info_card("Vertical Break vs Velocity", dcc.Graph(id="vel-plot"))
+    return info_card("Vertical/Horizontal Break vs Velocity", dcc.Graph(id="vel-plot"))
 
 
 def layout_break() -> info_card:
