@@ -414,10 +414,7 @@ def _generate_team_pdf(
         for _, player in _team_sorted(team_players).iterrows():
             name = str(player.get("full_name", "")).strip() or "Pitcher"
             playerlinkid = str(player.get("playerlinkid", "")).strip()
-            stats = (
-                cache.get_season_stats(playerlinkid)
-                if playerlinkid else None
-            )
+            stats = cache.get_season_stats(playerlinkid) if playerlinkid else None
             pitch_df = _pitch_df_for_player(player)
             _append_player_page(
                 pdf=pdf,
