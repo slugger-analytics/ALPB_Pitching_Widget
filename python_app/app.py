@@ -46,6 +46,7 @@ app = Dash(
     suppress_callback_exceptions=True,
 )
 app.title = "ALPB Pitchers — Scouting Report"
+server = app.server
 
 _ALL_TEAMS = "__ALL_TEAMS__"
 
@@ -355,4 +356,6 @@ def update_pitch_type_options(
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8050)
+    port = int(os.getenv("PORT", "8050"))
+    debug = os.getenv("DASH_DEBUG", "false").lower() == "true"
+    app.run(debug=debug, host="0.0.0.0", port=port)

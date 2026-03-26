@@ -10,17 +10,25 @@ and the matplotlib PDF export so they always look consistent.
 
 from __future__ import annotations
 
+import os
+
 # ── Pointstreak API ──────────────────────────────────────────────────────────
-POINTSTREAK_API_KEY = "vIpQsngDfc6Y7WVgAcTt"
-POINTSTREAK_BASE_URL = "https://api.pointstreak.com/baseball"
-LEAGUE_ID = "174"
+POINTSTREAK_API_KEY = os.getenv("POINTSTREAK_API_KEY", "")
+POINTSTREAK_BASE_URL = os.getenv(
+    "POINTSTREAK_BASE_URL",
+    "https://api.pointstreak.com/baseball",
+)
+LEAGUE_ID = os.getenv("POINTSTREAK_LEAGUE_ID", "174")
 
 # ── ALPB Trackman API ────────────────────────────────────────────────────────
-ALPB_API_KEY = "IuHgm3smV65kbC6lMlMLz80DOeEkGSiV6USoQhvZ"
-ALPB_BASE_URL = "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI"
+ALPB_API_KEY = os.getenv("ALPB_API_KEY", "")
+ALPB_BASE_URL = os.getenv(
+    "ALPB_BASE_URL",
+    "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI",
+)
 
 # ── Season / roster filters ─────────────────────────────────────────────────
-DEFAULT_SEASON_ID = "34102"
+DEFAULT_SEASON_ID = os.getenv("DEFAULT_SEASON_ID", "34102")
 EXCLUDED_TEAMS: set[str] = {"California Dogecoin", "Long Island Black Sox"}
 
 # ── Brand colours (shared by Dash UI and PDF export) ─────────────────────────
