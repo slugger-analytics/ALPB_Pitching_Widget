@@ -9,7 +9,7 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an ap
 - Interactive charts:
   - Break vs. velocity
   - iVB vs. HB
-  - Strike zone heatmaps
+  - Strike zone heatmaps  
   - Pitch type usage
 - PDF one-sheet export
 

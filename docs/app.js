@@ -1,10 +1,10 @@
 /* ALPB Pitching Widget - Pure JS MVP for GitHub Pages */
 
 const CFG = {
-  POINTSTREAK_API_KEY: "vIpQsngDfc6Y7WVgAcTt",
+  POINTSTREAK_API_KEY: "",
   POINTSTREAK_BASE_URL: "https://api.pointstreak.com/baseball",
   LEAGUE_ID: "174",
-  ALPB_API_KEY: "IuHgm3smV65kbC6lMlMLz80DOeEkGSiV6USoQhvZ",
+  ALPB_API_KEY: "",
   ALPB_BASE_URL: "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI",
   SEASON_ID: "34104",
   ALL_TEAMS: "__ALL_TEAMS__",
@@ -615,6 +615,15 @@ function explainLoadError(error) {
 
 async function bootstrap() {
   try {
+    if (!CFG.POINTSTREAK_API_KEY || !CFG.ALPB_API_KEY) {
+      setStatus("Missing API key config", "error");
+      setNotice(
+        "Static MVP no longer embeds API keys. Use the deployed Dash backend link (Render) or a server-side proxy.",
+        true,
+      );
+      return;
+    }
+
     setNotice(
       "This is a browser-only MVP. If your API blocks cross-origin requests, charts may stay empty on GitHub Pages.",
       false,
