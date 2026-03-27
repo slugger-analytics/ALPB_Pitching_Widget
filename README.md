@@ -1,3 +1,12 @@
+---
+title: SLUGGER Pitching Widget
+emoji: ⚾
+colorFrom: blue
+colorTo: red
+sdk: docker
+app_port: 7860
+---
+
 # ALPB Pitching Widget
 
 The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an app for analyzing pitching performance with Trackman and Pointstreak data.
@@ -48,6 +57,20 @@ This repo includes a GitHub Pages deployment workflow for a static project page 
 
 - GitHub Pages can host static content only.
 - The Dash app itself still runs as a Python web service (local machine or a cloud host).
+
+## Hugging Face Spaces (Free) Deployment
+
+Use a **Docker Space** for this Dash backend app.
+
+1. Create a new Space on Hugging Face, choose **Docker**.
+2. Push this repo to the Space (or connect/sync from GitHub).
+3. In Space **Settings -> Variables and secrets**, add:
+   - `POINTSTREAK_API_KEY`
+   - `ALPB_API_KEY`
+4. Rebuild the Space.
+
+The app will serve on port `7860` and your public link will be:
+`https://<your-space-name>.hf.space`
 
 ## Project Structure
 
