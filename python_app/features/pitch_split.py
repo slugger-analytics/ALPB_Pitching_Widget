@@ -52,6 +52,10 @@ def compute_pitch_split(pitch_data: pd.DataFrame, tag: str) -> pd.DataFrame:
     if pitch_data is None or pitch_data.empty:
         return empty
 
+    required_cols = {"balls", "strikes", tag}
+    if not required_cols.issubset(set(pitch_data.columns)):
+        return empty
+
     df = pitch_data.copy()
     df = df.dropna(subset=["balls", "strikes", tag])
     df = df[df[tag] != "Undefined"]
