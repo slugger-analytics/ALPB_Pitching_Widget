@@ -105,36 +105,40 @@ def download_pdf(
     tag: str | None,
 ):
     """Generate and send either a player PDF or a team multi-page PDF."""
-    pitch_tag = tag or "auto_pitch_type"
-    triggered = ctx.triggered_id
+    try:
+        pitch_tag = tag or "auto_pitch_type"
+        triggered = ctx.triggered_id
 
-    if triggered == "download-pdf-btn":
-        if not player_clicks or not selected_playerlinkid:
-            return no_update
-        player = cache.get_player(selected_playerlinkid)
-        if player is None:
-            return no_update
+        if triggered == "download-pdf-btn":
+            if not player_clicks or not selected_playerlinkid:
+                return no_update
+            player = cache.get_player(selected_playerlinkid)
+            if player is None:
+                return no_update
 
-        selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
-        stats = cache.get_season_stats(str(player["playerlinkid"]))
-        pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
+            selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
+            stats = cache.get_season_stats(str(player["playerlinkid"]))
+            pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
 
-        pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, pitch_tag)
-        filename = f"{_safe_filename(selected_name)} Pitcher Report.pdf"
-        return dcc.send_file(pdf_path, filename=filename)
+            pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, pitch_tag)
+            filename = f"{_safe_filename(selected_name)} Pitcher Report.pdf"
+            return dcc.send_file(pdf_path, filename=filename)
 
-    if triggered == "download-team-pdf-btn":
-        if not team_clicks or not selected_team or selected_team == _ALL_TEAMS:
-            return no_update
-        team_players = cache.get_players(selected_team)
-        if team_players.empty:
-            return no_update
+        if triggered == "download-team-pdf-btn":
+            if not team_clicks or not selected_team or selected_team == _ALL_TEAMS:
+                return no_update
+            team_players = cache.get_players(selected_team)
+            if team_players.empty:
+                return no_update
 
-        pdf_path = _generate_team_pdf(team_players, pitch_tag)
-        filename = f"{_safe_filename(selected_team)} Pitching Reports.pdf"
-        return dcc.send_file(pdf_path, filename=filename)
+            pdf_path = _generate_team_pdf(team_players, pitch_tag)
+            filename = f"{_safe_filename(selected_team)} Pitching Reports.pdf"
+            return dcc.send_file(pdf_path, filename=filename)
 
-    return no_update
+        return no_update
+    except Exception:
+        traceback.print_exc()
+        return no_update
 
 
 def _safe_filename(raw: str) -> str:
