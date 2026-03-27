@@ -30,6 +30,7 @@ const AXIS_LABELS = {
   horz_break: "Horizontal Break (in)",
   rel_speed: "Velocity (mph)",
 };
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 
 const state = {
   roster: [],
@@ -78,6 +79,104 @@ function asArray(v) {
 function safeStr(v) {
   if (v == null) return "";
   return String(v);
+}
+
+function asciiFold(v) {
+  const token = safeStr(v);
+  if (!token) return "";
+  return token.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeName(v) {
+  return asciiFold(v)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripSuffixNormalized(v) {
+  const tokens = normalizeName(v).split(" ").filter(Boolean);
+  while (tokens.length && NAME_SUFFIXES.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  return tokens.join(" ");
+}
+
+function stripSuffixRaw(v) {
+  const tokens = safeStr(v).trim().split(/\s+/).filter(Boolean);
+  while (tokens.length) {
+    const tail = normalizeName(tokens[tokens.length - 1]).replace(/\s+/g, "");
+    if (!NAME_SUFFIXES.has(tail)) break;
+    tokens.pop();
+  }
+  return tokens.join(" ");
+}
+
+function buildAlpbQueries(player) {
+  const first = safeStr(player?.fname).trim();
+  const last = safeStr(player?.lname).trim();
+  if (!first || !last) return [];
+
+  const firstAscii = asciiFold(first);
+  const lastAscii = asciiFold(last);
+  const lastNoSuffix = stripSuffixRaw(last);
+  const lastNoSuffixAscii = asciiFold(lastNoSuffix);
+
+  const seen = new Set();
+  const out = [];
+  const add = (q) => {
+    const token = safeStr(q).trim();
+    if (!token) return;
+    const key = token.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(token);
+  };
+
+  add(`${last}, ${first}`);
+  add(`${lastAscii}, ${firstAscii}`);
+  if (lastNoSuffix) add(`${lastNoSuffix}, ${first}`);
+  if (lastNoSuffixAscii) add(`${lastNoSuffixAscii}, ${firstAscii}`);
+  return out;
+}
+
+function parseAlpbNameParts(player) {
+  let first = safeStr(
+    player?.player_first_name ?? player?.first_name ?? player?.fname,
+  ).trim();
+  let last = safeStr(
+    player?.player_last_name ?? player?.last_name ?? player?.lname,
+  ).trim();
+  if (first && last) return { first, last };
+
+  const full = safeStr(player?.player_name ?? player?.full_name).trim();
+  if (full.includes(",")) {
+    const [rawLast, rawFirst] = full.split(",", 2).map((t) => safeStr(t).trim());
+    return { first: rawFirst || first, last: rawLast || last };
+  }
+  const parts = full.split(/\s+/).filter(Boolean);
+  if (parts.length && !first) first = parts[0];
+  if (parts.length > 1 && !last) last = parts.slice(1).join(" ");
+  return { first, last };
+}
+
+function pickAlpbPitcher(candidates, player) {
+  const pitchers = asArray(candidates).filter((p) => Boolean(p?.is_pitcher));
+  if (!pitchers.length) return null;
+
+  const targetFirst = normalizeName(player?.fname).split(" ").filter(Boolean)[0] || "";
+  const targetLast = stripSuffixNormalized(player?.lname);
+
+  for (const p of pitchers) {
+    const parts = parseAlpbNameParts(p);
+    const first = normalizeName(parts.first).split(" ").filter(Boolean)[0] || "";
+    const last = stripSuffixNormalized(parts.last);
+    if (first === targetFirst && last === targetLast) {
+      return p;
+    }
+  }
+  return pitchers.length === 1 ? pitchers[0] : null;
 }
 
 function esc(v) {
@@ -297,18 +396,23 @@ async function lookupAlpbId(player) {
   if (!key) return null;
   if (state.alpbIdCache.has(key)) return state.alpbIdCache.get(key);
 
-  const query = `${safeStr(player.lname)}, ${safeStr(player.fname)}`;
-  const url = `${CFG.ALPB_BASE_URL}/players?player_name=${encodeURIComponent(query)}`;
-  try {
-    const parsed = await fetchJson(url, { "x-api-key": CFG.ALPB_API_KEY });
-    const found = asArray(parsed?.data).find((p) => Boolean(p?.is_pitcher));
-    const id = found?.player_id ? safeStr(found.player_id) : null;
-    state.alpbIdCache.set(key, id);
-    return id;
-  } catch {
-    state.alpbIdCache.set(key, null);
-    return null;
+  const queries = buildAlpbQueries(player);
+  for (const query of queries) {
+    const url = `${CFG.ALPB_BASE_URL}/players?player_name=${encodeURIComponent(query)}`;
+    try {
+      const parsed = await fetchJson(url, { "x-api-key": CFG.ALPB_API_KEY });
+      const found = pickAlpbPitcher(parsed?.data, player);
+      if (found?.player_id) {
+        const id = safeStr(found.player_id);
+        state.alpbIdCache.set(key, id);
+        return id;
+      }
+    } catch {
+      continue;
+    }
   }
+  state.alpbIdCache.set(key, null);
+  return null;
 }
 
 async function fetchPitchData(alpbPlayerId) {
