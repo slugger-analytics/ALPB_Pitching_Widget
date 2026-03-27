@@ -8,6 +8,8 @@ belongs to :mod:`python_app.lib.cache`.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
+import unicodedata
 
 import pandas as pd
 import requests
@@ -29,6 +31,8 @@ _ps_session.headers.update({"apikey": POINTSTREAK_API_KEY})
 
 _alpb_session = requests.Session()
 _alpb_session.headers.update({"x-api-key": ALPB_API_KEY})
+
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -118,21 +122,145 @@ def fetch_pitching_stats(
 def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
     """Look up a pitcher's ALPB ID by name.  Returns a dict or *None*."""
     url = f"{ALPB_BASE_URL}/players"
-    try:
-        res = _alpb_session.get(url, params={"player_name": f"{lname}, {fname}"})
-        res.raise_for_status()
-        data = res.json().get("data")
-        if not data or not isinstance(data, list) or len(data) == 0:
-            return None
-        player = data[0]
-        if player and player.get("is_pitcher"):
-            return {
-                "player_id": player["player_id"],
-                "pitching_hand": player.get("player_pitching_handedness", "Unknown"),
-            }
-    except Exception:
-        pass
+    for query in _alpb_query_candidates(fname, lname):
+        try:
+            res = _alpb_session.get(url, params={"player_name": query})
+            res.raise_for_status()
+            data = res.json().get("data")
+            if not isinstance(data, list) or not data:
+                continue
+            player = _select_pitcher_match(data, fname, lname)
+            if player and player.get("player_id"):
+                return {
+                    "player_id": player["player_id"],
+                    "pitching_hand": player.get("player_pitching_handedness", "Unknown"),
+                }
+        except Exception:
+            continue
     return None
+
+
+def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
+    """Return de-duplicated query variants for ALPB `/players`."""
+    first = str(fname or "").strip()
+    last = str(lname or "").strip()
+    if not first or not last:
+        return []
+
+    first_ascii = _ascii_fold(first)
+    last_ascii = _ascii_fold(last)
+    last_no_suffix = _strip_suffix_raw(last)
+    last_no_suffix_ascii = _ascii_fold(last_no_suffix)
+
+    queries: list[str] = []
+    seen: set[str] = set()
+
+    def _add(q: str) -> None:
+        token = q.strip()
+        if not token:
+            return
+        key = token.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        queries.append(token)
+
+    _add(f"{last}, {first}")
+    _add(f"{last_ascii}, {first_ascii}")
+    if last_no_suffix:
+        _add(f"{last_no_suffix}, {first}")
+    if last_no_suffix_ascii:
+        _add(f"{last_no_suffix_ascii}, {first_ascii}")
+
+    return queries
+
+
+def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict | None:
+    """Choose the best pitcher candidate from ALPB `/players` response."""
+    pitchers = [p for p in players if isinstance(p, dict) and p.get("is_pitcher")]
+    if not pitchers:
+        return None
+
+    target_first = _normalize_name(fname).split(" ")[0]
+    target_last = _strip_suffix_norm(_normalize_name(lname))
+
+    for player in pitchers:
+        first_name, last_name = _player_name_parts(player)
+        first_norm = _normalize_name(first_name).split(" ")[0]
+        last_norm = _strip_suffix_norm(_normalize_name(last_name))
+        if first_norm == target_first and last_norm == target_last:
+            return player
+
+    if len(pitchers) == 1:
+        return pitchers[0]
+    return None
+
+
+def _player_name_parts(player: dict) -> tuple[str, str]:
+    """Extract first/last name from ALPB player payload fields."""
+    first = str(
+        player.get("player_first_name")
+        or player.get("first_name")
+        or player.get("fname")
+        or ""
+    ).strip()
+    last = str(
+        player.get("player_last_name")
+        or player.get("last_name")
+        or player.get("lname")
+        or ""
+    ).strip()
+
+    if first and last:
+        return first, last
+
+    full = str(player.get("player_name") or player.get("full_name") or "").strip()
+    if "," in full:
+        raw_last, raw_first = [part.strip() for part in full.split(",", 1)]
+        return raw_first or first, raw_last or last
+    parts = [part for part in full.split(" ") if part]
+    if parts and not first:
+        first = parts[0]
+    if len(parts) > 1 and not last:
+        last = " ".join(parts[1:])
+    return first, last
+
+
+def _ascii_fold(value: str) -> str:
+    """Convert accented unicode text to plain ASCII."""
+    text = str(value or "")
+    return (
+        unicodedata.normalize("NFKD", text)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+
+
+def _normalize_name(value: str) -> str:
+    """Case-insensitive / punctuation-insensitive normalization for names."""
+    text = _ascii_fold(value).lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _strip_suffix_norm(value: str) -> str:
+    """Remove common baseball suffix tokens from normalized names."""
+    tokens = value.split()
+    while tokens and tokens[-1] in _NAME_SUFFIXES:
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def _strip_suffix_raw(value: str) -> str:
+    """Remove common suffix tokens while preserving raw display casing."""
+    tokens = [t for t in str(value or "").strip().split(" ") if t]
+    while tokens:
+        tail = _normalize_name(tokens[-1]).replace(" ", "")
+        if tail in _NAME_SUFFIXES:
+            tokens.pop()
+            continue
+        break
+    return " ".join(tokens)
 
 
 def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
