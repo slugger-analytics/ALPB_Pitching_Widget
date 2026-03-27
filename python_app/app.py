@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
 
 # Ensure the project root is on sys.path so ``python -m python_app.app``
 # works regardless of the current working directory.
@@ -37,7 +38,11 @@ from python_app.features import (  # noqa: F401
 
 # ── Bootstrap the data cache ─────────────────────────────────────────────────
 print("Loading pitcher roster...")
-cache.load_roster()
+try:
+    cache.load_roster()
+except Exception:
+    print("Failed to load roster at startup. App will boot with empty data.")
+    traceback.print_exc()
 
 # ── Dash app ─────────────────────────────────────────────────────────────────
 app = Dash(
@@ -47,6 +52,13 @@ app = Dash(
 )
 app.title = "ALPB Pitchers — Scouting Report"
 server = app.server
+
+
+@server.route("/healthz")
+def healthz():
+    """Lightweight endpoint for uptime probes."""
+    return {"status": "ok"}, 200
+
 
 _ALL_TEAMS = "__ALL_TEAMS__"
 

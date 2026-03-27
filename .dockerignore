@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+python_app/.DS_Store
+docs/
