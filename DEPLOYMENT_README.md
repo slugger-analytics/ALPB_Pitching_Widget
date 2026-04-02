@@ -2,97 +2,65 @@
 
 ## 1. Deployment Goal
 
-Provide one public URL for the current `Dash + Python` app version.
+Provide a reproducible deployment process for the Dash app and keep one stable public URL for demos/checkpoints.
 
-Because this app has backend logic and server-side PDF generation, `GitHub Pages` is not suitable for production deployment.
+## 2. Current Production URL
 
-## 2. Final Deployment Choice
+- Hugging Face Space (active): https://zora12345-slugger.hf.space
 
-- Platform: `Hugging Face Spaces`
-- Type: `Docker Space`
-- Public URL format: `https://<space-name>.hf.space`
+## 3. Platform Options
 
-Current target Space:
+### A) Hugging Face Spaces (Primary)
 
-- `Zora12345/Slugger`
+Use this when you need the existing live app link used in class/checkpoint review.
 
-## 3. What Was Changed in This Repo
+1. Open or create Space `Zora12345/Slugger`.
+2. Set SDK to `Docker`.
+3. Push this repository or upload files (`Dockerfile`, `python_app/`, `README.md`, etc.).
+4. In `Settings -> Variables and secrets`, add:
+   - `POINTSTREAK_API_KEY`
+   - `ALPB_API_KEY`
+5. Rebuild the Space.
+6. Validate:
+   - App home page loads.
+   - `/healthz` returns `{"status":"ok"}`.
+   - PDF download works in UI.
+7. Optional automation:
+   - If connected to GitHub, Space can auto-build on new pushes.
 
-The repository was updated for Space deployment:
+### B) Render Web Service (Backup)
 
-- Added `Dockerfile` to run the Dash app with `gunicorn`.
-- Added `.dockerignore` to keep image build clean.
-- Updated `README.md` metadata for Hugging Face Space (`sdk: docker`, `app_port: 7860`).
-- Updated app startup so cloud environments use `PORT`.
-- Added `/healthz` endpoint for runtime health checks.
-- Moved API keys out of source code to environment variables in `python_app/config.py`.
+Use this as an alternate deployment target.
 
-## 4. Required Secrets
+1. Create a new Web Service on Render.
+2. Connect this GitHub repository.
+3. Keep `render.yaml` in repo root (Blueprint config).
+4. Ensure env vars are set in Render:
+   - `POINTSTREAK_API_KEY`
+   - `ALPB_API_KEY`
+   - `DASH_DEBUG=false`
+5. Deploy and verify endpoint health.
+6. Optional automation:
+   - Keep `autoDeploy: true` in `render.yaml` to auto-deploy on each push.
 
-Configure these in Hugging Face Space settings (Secrets):
+## 4. Required Environment Variables
 
 - `POINTSTREAK_API_KEY`
 - `ALPB_API_KEY`
+- Optional overrides:
+  - `POINTSTREAK_BASE_URL`
+  - `ALPB_BASE_URL`
+  - `DEFAULT_SEASON_ID`
+  - `DASH_DEBUG`
 
-Both values must be set before the app can load live data.
+## 5. Notes for Handoff (Next Maintainer)
 
-## 5. Step-by-Step Deployment (UI Flow)
+- Preferred live link to share: **https://zora12345-slugger.hf.space**
+- If you redeploy and URL changes, update both:
+  - `README.md` (`Live App` section)
+  - this `DEPLOYMENT_README.md` (`Current Production URL` section)
+- Keep secrets only in platform settings; do not commit real API keys.
 
-1. Create or open the Space on Hugging Face.
-2. Set Space SDK to `Docker` (if creating a new Space).
-3. Upload/push project files (`Dockerfile`, `README.md`, `python_app/`, etc.).
-4. Go to `Settings -> Variables and secrets`.
-5. Add:
-   - `POINTSTREAK_API_KEY`
-   - `ALPB_API_KEY`
-6. Restart/rebuild the Space.
-7. Verify:
-   - Main app URL loads.
-   - `https://<space-name>.hf.space/healthz` returns `{"status":"ok"}`.
-   - PDF download works from the UI.
+## 6. Why GitHub Pages CI/CD Was Removed
 
-## 6. Common Issues and Fixes
-
-### Issue A: Callback error on PDF download
-
-Symptom:
-
-- Frontend shows `Callback error updating download-pdf.data`.
-
-Fix applied:
-
-- Added safer checks for missing pitch-tag columns in PDF pipeline.
-- Added exception guard in PDF download callback to avoid 500 crashes.
-
-### Issue B: Push rejected due binary files
-
-Symptom:
-
-- Hugging Face pre-receive hook rejects push with old binary objects from git history.
-
-Fix:
-
-- Push from a clean history snapshot (new git history) or upload via Space web UI.
-
-## 7. Hugging Face Free Limits (Important)
-
-Hugging Face Space is not unlimited on free tier:
-
-- Free `CPU Basic` has resource limits (CPU, RAM, disk).
-- Free Spaces can sleep when inactive.
-- Disk on Spaces is ephemeral by default.
-
-So the platform is free to start, but it still has runtime/storage/lifecycle limits.
-
-Official docs:
-
-- Spaces lifecycle and sleep on free hardware: https://huggingface.co/docs/hub/main/en/spaces-overview
-- Spaces disk behavior (ephemeral by default): https://huggingface.co/docs/hub/spaces-storage
-- Docker Space config (`sdk: docker`, `app_port`): https://huggingface.co/docs/hub/en/spaces-sdks-docker
-- Space YAML config reference: https://huggingface.co/docs/hub/en/spaces-config-reference
-
-## 8. Submission Link
-
-Use your final public Space URL, for example:
-
-- `https://zora12345-slugger.hf.space`
+This project is backend-driven (Dash + server-side PDF export), so static GitHub Pages CI/CD was removed. Runtime deployment is now documented for Hugging Face and Render only.
