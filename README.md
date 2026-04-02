@@ -67,7 +67,6 @@ You can copy from `.env.example` to get started quickly.
 .
 ├── DEPLOYMENT_README.md
 ├── Dockerfile
-├── docs/index.html
 ├── render.yaml
 └── python_app/
     ├── app.py
