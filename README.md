@@ -11,6 +11,10 @@ app_port: 7860
 
 The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an app for analyzing pitching performance with Trackman and Pointstreak data.
 
+## Live App
+
+- Hugging Face (production): https://zora12345-slugger.hf.space
+
 ## Features
 
 - Pitcher profile and player metadata
@@ -18,19 +22,17 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an ap
 - Interactive charts:
   - Break vs. velocity
   - iVB vs. HB
-  - Strike zone heatmaps  
+  - Strike zone heatmaps
   - Pitch type usage
 - PDF one-sheet export
 
-## Python App (Dash)
+## Local Run (Dash)
 
 The production app is implemented in `python_app/` using [Dash](https://dash.plotly.com/).
 
-### Local Run
-
 ```bash
-git clone https://github.com/tanx3036/SLUGGER-Pitching-Widget.git
-cd SLUGGER-Pitching-Widget
+git clone https://github.com/tanx3036/ALPB_Pitching_Widget.git
+cd ALPB_Pitching_Widget
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r python_app/requirements.txt
@@ -39,45 +41,34 @@ python python_app/app.py
 
 Then open `http://localhost:8050`.
 
-## GitHub Pages
+## Environment Variables
 
-This repo includes a GitHub Pages deployment workflow for a static project page under `docs/`.
+Set these values in your environment (or deployment platform secrets):
 
-- Workflow file: `.github/workflows/pages.yml`
-- Static page source: `docs/index.html`
-- Publish trigger: push to `main` (or manual workflow dispatch)
+- `POINTSTREAK_API_KEY`
+- `ALPB_API_KEY`
+- `POINTSTREAK_BASE_URL` (optional)
+- `ALPB_BASE_URL` (optional)
+- `DEFAULT_SEASON_ID` (optional)
+- `DASH_DEBUG` (optional; default `false`)
 
-### Enable Pages in Repository Settings
+You can copy from `.env.example` to get started quickly.
 
-1. Go to **Settings** -> **Pages**.
-2. Under **Build and deployment**, choose **Source: GitHub Actions**.
-3. Push to `main` and wait for the **Deploy GitHub Pages** workflow to finish.
+## Deployment
 
-## Notes
-
-- GitHub Pages can host static content only.
-- The Dash app itself still runs as a Python web service (local machine or a cloud host).
-
-## Hugging Face Spaces (Free) Deployment
-
-Use a **Docker Space** for this Dash backend app.
-
-1. Create a new Space on Hugging Face, choose **Docker**.
-2. Push this repo to the Space (or connect/sync from GitHub).
-3. In Space **Settings -> Variables and secrets**, add:
-   - `POINTSTREAK_API_KEY`
-   - `ALPB_API_KEY`
-4. Rebuild the Space.
-
-The app will serve on port `7860` and your public link will be:
-`https://<your-space-name>.hf.space`
+- Primary: Hugging Face Spaces (Docker), current production link above.
+- Alternate: Render Web Service.
+- Deployment automation: both platforms can auto-redeploy on push (platform-managed, not GitHub Pages Actions).
+- Full deployment walkthrough: `DEPLOYMENT_README.md`.
 
 ## Project Structure
 
 ```text
 .
-├── .github/workflows/pages.yml
+├── DEPLOYMENT_README.md
+├── Dockerfile
 ├── docs/index.html
+├── render.yaml
 └── python_app/
     ├── app.py
     ├── requirements.txt
@@ -85,3 +76,9 @@ The app will serve on port `7860` and your public link will be:
     ├── features/
     └── lib/
 ```
+
+## Collaboration Workflow
+
+- Use feature branches for changes.
+- Open a pull request before merging to `main`.
+- Keep deployment notes updated in `DEPLOYMENT_README.md`.
