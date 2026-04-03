@@ -41,6 +41,10 @@ python python_app/app.py
 
 Then open `http://localhost:8050`.
 
+Port behavior:
+- Local default: `8050`
+- Cloud runtime: uses `PORT` env var (Hugging Face is typically `7860`)
+
 ## Environment Variables
 
 Set these values in your environment (or deployment platform secrets):
@@ -60,6 +64,7 @@ You can copy from `.env.example` to get started quickly.
 - Alternate: Render Web Service.
 - Deployment automation: both platforms can auto-redeploy on push (platform-managed, not GitHub Pages Actions).
 - Full deployment walkthrough: `DEPLOYMENT_README.md`.
+- Note: `app_port: 7860` in the README header is for Hugging Face Space runtime metadata.
 
 ## Project Structure
 
