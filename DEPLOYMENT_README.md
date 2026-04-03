@@ -2,65 +2,66 @@
 
 ## 1. Deployment Goal
 
-Provide a reproducible deployment process for the Dash app and keep one stable public URL for demos/checkpoints.
+Provide a reproducible deployment path for the Dash app and maintain one stable public URL for review.
 
-## 2. Current Production URL
+## 2. Deployment Platform
 
-- Hugging Face Space (active): https://zora12345-slugger.hf.space
+- Platform: **Render**
+- Service type: **Web Service**
+- URL format: `https://<your-render-service>.onrender.com`
 
-## 3. Platform Options
+## 3. Required Files in Repository
 
-### A) Hugging Face Spaces (Primary)
+- `render.yaml` (Blueprint config)
+- `python_app/requirements.txt`
+- `python_app/app.py` (exposes `server = app.server`)
 
-Use this when you need the existing live app link used in class/checkpoint review.
+## 4. Deploy with Render Blueprint (Recommended)
 
-1. Open or create Space `Zora12345/Slugger`.
-2. Set SDK to `Docker`.
-3. Push this repository or upload files (`Dockerfile`, `python_app/`, `README.md`, etc.).
-4. In `Settings -> Variables and secrets`, add:
-   - `POINTSTREAK_API_KEY`
-   - `ALPB_API_KEY`
-5. Rebuild the Space.
-6. Validate:
-   - App home page loads.
-   - `/healthz` returns `{"status":"ok"}`.
-   - PDF download works in UI.
-7. Optional automation:
-   - If connected to GitHub, Space can auto-build on new pushes.
-
-### B) Render Web Service (Backup)
-
-Use this as an alternate deployment target.
-
-1. Create a new Web Service on Render.
-2. Connect this GitHub repository.
-3. Keep `render.yaml` in repo root (Blueprint config).
-4. Ensure env vars are set in Render:
+1. Push latest code to GitHub.
+2. In Render dashboard, click `New +` -> `Blueprint`.
+3. Connect and select this repository.
+4. Render reads `render.yaml` and provisions the web service.
+5. In service environment variables, set:
    - `POINTSTREAK_API_KEY`
    - `ALPB_API_KEY`
    - `DASH_DEBUG=false`
-5. Deploy and verify endpoint health.
-6. Optional automation:
-   - Keep `autoDeploy: true` in `render.yaml` to auto-deploy on each push.
+6. Deploy.
 
-## 4. Required Environment Variables
+## 5. Manual Render Setup (Fallback)
 
+If Blueprint is not used, configure the service manually:
+
+- Runtime: `Python`
+- Build command: `pip install -r python_app/requirements.txt`
+- Start command: `gunicorn python_app.app:server --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
+- Health check path: `/healthz`
+
+Required secrets:
 - `POINTSTREAK_API_KEY`
 - `ALPB_API_KEY`
-- Optional overrides:
-  - `POINTSTREAK_BASE_URL`
-  - `ALPB_BASE_URL`
-  - `DEFAULT_SEASON_ID`
-  - `DASH_DEBUG`
 
-## 5. Notes for Handoff (Next Maintainer)
+Optional overrides:
+- `POINTSTREAK_BASE_URL`
+- `ALPB_BASE_URL`
+- `DEFAULT_SEASON_ID`
+- `DASH_DEBUG`
 
-- Preferred live link to share: **https://zora12345-slugger.hf.space**
-- If you redeploy and URL changes, update both:
+## 6. Post-Deploy Validation Checklist
+
+1. Service URL returns HTTP 200.
+2. `/healthz` returns `{"status":"ok"}`.
+3. Team/player dropdowns load real data.
+4. PDF export succeeds.
+
+## 7. Handoff Notes (Next Maintainer)
+
+- Keep `autoDeploy` enabled for main branch deployment automation.
+- If service URL changes, update both:
   - `README.md` (`Live App` section)
-  - this `DEPLOYMENT_README.md` (`Current Production URL` section)
-- Keep secrets only in platform settings; do not commit real API keys.
+  - this `DEPLOYMENT_README.md` (`Deployment Platform` section)
+- Keep API keys only in Render environment settings; do not commit credentials.
 
-## 6. Why GitHub Pages CI/CD Was Removed
+## 8. Why Static Pages Were Removed
 
-This project is backend-driven (Dash + server-side PDF export), so static GitHub Pages CI/CD was removed. Runtime deployment is now documented for Hugging Face and Render only.
+This project is backend-driven (Dash + server-side PDF generation), so static-site deployment was removed. Deployment is managed on Render.

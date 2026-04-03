@@ -1,19 +1,10 @@
----
-title: SLUGGER Pitching Widget
-emoji: ⚾
-colorFrom: blue
-colorTo: red
-sdk: docker
-app_port: 7860
----
-
 # ALPB Pitching Widget
 
-The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an app for analyzing pitching performance with Trackman and Pointstreak data.
+The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is a Dash application for analyzing pitcher performance with Pointstreak and ALPB Trackman data.
 
 ## Live App
 
-- Hugging Face (production): https://zora12345-slugger.hf.space
+- Production (Render): `https://<your-render-service>.onrender.com`
 
 ## Features
 
@@ -26,12 +17,10 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is an ap
   - Pitch type usage
 - PDF one-sheet export
 
-## Local Run (Dash)
-
-The production app is implemented in `python_app/` using [Dash](https://dash.plotly.com/).
+## Local Run
 
 ```bash
-git clone https://github.com/tanx3036/ALPB_Pitching_Widget.git
+git clone https://github.com/slugger-analytics/ALPB_Pitching_Widget.git
 cd ALPB_Pitching_Widget
 python3 -m venv .venv
 source .venv/bin/activate
@@ -39,32 +28,53 @@ pip install -r python_app/requirements.txt
 python python_app/app.py
 ```
 
-Then open `http://localhost:8050`.
+Open `http://localhost:8050`.
 
 Port behavior:
 - Local default: `8050`
-- Cloud runtime: uses `PORT` env var (Hugging Face is typically `7860`)
+- Cloud runtime: uses `PORT` from the hosting platform
 
 ## Environment Variables
 
-Set these values in your environment (or deployment platform secrets):
+Set these values locally or in Render environment settings:
 
-- `POINTSTREAK_API_KEY`
-- `ALPB_API_KEY`
+- `POINTSTREAK_API_KEY` (required)
+- `ALPB_API_KEY` (required)
 - `POINTSTREAK_BASE_URL` (optional)
 - `ALPB_BASE_URL` (optional)
 - `DEFAULT_SEASON_ID` (optional)
 - `DASH_DEBUG` (optional; default `false`)
 
-You can copy from `.env.example` to get started quickly.
+Use `.env.example` as a template for local development.
 
-## Deployment
+## Render Deployment Setup
 
-- Primary: Hugging Face Spaces (Docker), current production link above.
-- Alternate: Render Web Service.
-- Deployment automation: both platforms can auto-redeploy on push (platform-managed, not GitHub Pages Actions).
-- Full deployment walkthrough: `DEPLOYMENT_README.md`.
-- Note: `app_port: 7860` in the README header is for Hugging Face Space runtime metadata.
+### Option A: Blueprint Deploy (recommended)
+
+1. Push this repository to GitHub.
+2. In Render, click `New +` -> `Blueprint`.
+3. Select this repository.
+4. Render reads `render.yaml` and creates the web service.
+5. Add required secrets:
+   - `POINTSTREAK_API_KEY`
+   - `ALPB_API_KEY`
+6. Trigger deploy.
+7. Verify:
+   - App homepage loads
+   - `https://<your-render-service>.onrender.com/healthz` returns `{"status":"ok"}`
+   - PDF export works from UI
+
+### Option B: Manual Web Service
+
+1. In Render, click `New +` -> `Web Service`.
+2. Connect this repository and set:
+   - Runtime: `Python`
+   - Build Command: `pip install -r python_app/requirements.txt`
+   - Start Command: `gunicorn python_app.app:server --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
+3. Add required environment variables.
+4. Deploy and verify `/healthz`.
+
+Auto-deploy can stay enabled so each push to `main` triggers a new Render deploy.
 
 ## Project Structure
 
