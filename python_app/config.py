@@ -11,6 +11,38 @@ and the matplotlib PDF export so they always look consistent.
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # Optional for environments that inject vars directly.
+    load_dotenv = None
+
+
+def _load_dotenv_fallback(dotenv_path: Path) -> None:
+    """Minimal .env loader for local runs when python-dotenv is unavailable."""
+    if not dotenv_path.exists():
+        return
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+_dotenv_path = Path(__file__).resolve().parents[1] / ".env"
+if load_dotenv is not None:
+    # Load repo-root .env for local runs (python python_app/app.py).
+    load_dotenv(_dotenv_path, override=False)
+else:
+    _load_dotenv_fallback(_dotenv_path)
 
 # ── Pointstreak API ──────────────────────────────────────────────────────────
 POINTSTREAK_API_KEY = os.getenv("POINTSTREAK_API_KEY", "")
