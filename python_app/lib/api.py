@@ -113,6 +113,7 @@ def fetch_pitching_stats(
     if isinstance(data, dict):
         data = [data]
     df = pd.DataFrame(data)
+    print(df.columns.tolist())
     stat_order = ["gp", "gs", "w", "l", "sv", "h", "bb", "so", "ip", "er", "era"]
     cols = [c for c in stat_order if c in df.columns] + [c for c in df.columns if c not in stat_order]
     return df[cols]
