@@ -124,6 +124,8 @@ class DataCache:
 
     # ── Pitch-by-pitch data ───────────────────────────────────────────────
 
+    _PITCH_CACHE_MAX = 5
+
     def get_pitch_data(self, player_id: str) -> list[dict] | None:
         """Return raw pitch records for *player_id*, fetching on first access."""
         if not player_id:
@@ -135,6 +137,8 @@ class DataCache:
             self._pitch_data[player_id] = None
             return None
         records = df.to_dict("records")
+        if len(self._pitch_data) >= self._PITCH_CACHE_MAX:
+            self._pitch_data.pop(next(iter(self._pitch_data)))
         self._pitch_data[player_id] = records
         return records
 
