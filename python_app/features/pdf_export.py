@@ -447,7 +447,7 @@ def _append_player_page(
     filtered: pd.DataFrame | None = None
     split_df: pd.DataFrame | None = None
     if has_pitches:
-        filtered = pitch_data.copy()
+        filtered = pitch_data
         if pitch_tag in filtered.columns:
             filtered = filtered.dropna(subset=[pitch_tag])
             filtered = filtered[filtered[pitch_tag] != "Undefined"]
