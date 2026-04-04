@@ -191,7 +191,7 @@ def _plotly_to_image(
     fig: go.Figure,
     width: int = 520,
     height: int = 380,
-    scale: int = 2,
+    scale: int = 1,
 ) -> np.ndarray | None:
     """Convert a Plotly figure to a NumPy RGBA array for matplotlib.
 
@@ -460,6 +460,7 @@ def _append_player_page(
             pfig = build_scatter(filtered, x_col, y_col, pitch_tag)
             pfig.update_layout(margin=dict(l=50, r=10, t=10, b=40), height=260)
             scatter_images.append(_plotly_to_image(pfig, width=620, height=360))
+            del pfig
 
         rh_df = _filter_by_batter_side(filtered, "Right")
         lh_df = _filter_by_batter_side(filtered, "Left")
@@ -467,6 +468,7 @@ def _append_player_page(
             hfig = build_heatmap(side_df)
             hfig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=250)
             heatmap_images.append(_plotly_to_image(hfig, width=620, height=340))
+            del hfig
 
     photo = _download_photo(player.get("photo", ""))
     _build_page(
