@@ -4,7 +4,7 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is a Das
 
 ## Live App
 
-- Production (Render): `https://<your-render-service>.onrender.com`
+- Production (Render): `https://slugger-pitching-widget-xfcw.onrender.com/`
 
 ## Features
 
@@ -15,7 +15,8 @@ The **Atlantic League of Professional Baseball (ALPB) Pitching Widget** is a Das
   - iVB vs. HB
   - Strike zone heatmaps
   - Pitch type usage
-- PDF one-sheet export
+- PDF one-sheet profile export for each player
+   - Option to download an entire team's pitching staff at once 
 
 ## Local Run
 
