@@ -333,23 +333,10 @@ def toggle_team_pdf_button(selected_team: str | None):
     return {"display": "block"}
 
 
-_UI_PITCH_COLS = [
-    "rel_speed", "induced_vert_break", "horz_break",
-    "batter_side", "auto_pitch_type", "tagged_pitch_type",
-    "plate_loc_side", "plate_loc_height",
-]
-
 @callback(Output("pitch-data-store", "data"), Input("alpb-player-id-store", "data"))
 def fetch_pitch_data(player_id: str | None):
     """Fetch raw pitch records for the selected ALPB player."""
-    if not player_id:
-        return None
-    records = cache.get_pitch_data(player_id)
-    if not records:
-        return None
-    df = pd.DataFrame(records)
-    cols = [c for c in _UI_PITCH_COLS if c in df.columns]
-    return df[cols].to_dict("records")
+    return cache.get_pitch_data(player_id) if player_id else None
 
 
 @callback(Output("alpb-rows", "style"), Input("alpb-player-id-store", "data"))
