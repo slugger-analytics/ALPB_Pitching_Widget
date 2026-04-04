@@ -191,7 +191,7 @@ def _plotly_to_image(
     fig: go.Figure,
     width: int = 520,
     height: int = 380,
-    scale: int = 1,
+    scale: int = 2,
 ) -> np.ndarray | None:
     """Convert a Plotly figure to a NumPy RGBA array for matplotlib.
 
