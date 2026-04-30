@@ -17,12 +17,20 @@ import requests
 from python_app.config import (
     ALPB_API_KEY,
     ALPB_BASE_URL,
+    DATA_SOURCE,
     DEFAULT_SEASON_ID,
     EXCLUDED_TEAMS,
     LEAGUE_ID,
     MAX_WORKERS,
     POINTSTREAK_API_KEY,
     POINTSTREAK_BASE_URL,
+)
+from python_app.lib.conditioning import clean_pitcher_roster
+from python_app.lib.sample_data import (
+    load_sample_pitches,
+    load_sample_pitcher_info,
+    load_sample_pitchers,
+    load_sample_pitching_stats,
 )
 
 # Persistent HTTP sessions for connection reuse
@@ -41,6 +49,9 @@ _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 def fetch_all_pitchers(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
     """Fetch every pitcher across all ALPB teams for *season_id*."""
+    if DATA_SOURCE == "sample":
+        return load_sample_pitchers()
+
     url = f"{POINTSTREAK_BASE_URL}/league/structure/{LEAGUE_ID}/json"
 
     res = _ps_session.get(url, params={"seasonid": season_id})
@@ -68,23 +79,7 @@ def fetch_all_pitchers(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
     if not all_pitchers:
         return pd.DataFrame()
 
-    df = pd.DataFrame(all_pitchers)
-    df = df[~df["teamname"].isin(EXCLUDED_TEAMS)]
-
-    # Drop rows without a usable player name so the dropdown never shows
-    # placeholders like "Unknown" / empty names.
-    df["fname"] = df["fname"].fillna("").astype(str).str.strip()
-    df["lname"] = df["lname"].fillna("").astype(str).str.strip()
-    bad_name_tokens = {"", "unknown", "nan", "none", "null", "/"}
-    valid_name_mask = (
-        ~df["fname"].str.lower().isin(bad_name_tokens)
-        & ~df["lname"].str.lower().isin(bad_name_tokens)
-    )
-    df = df[valid_name_mask]
-
-    df = df.sort_values("lname").reset_index(drop=True)
-    df["full_name"] = (df["fname"] + " " + df["lname"]).str.strip()
-    return df
+    return clean_pitcher_roster(pd.DataFrame(all_pitchers), EXCLUDED_TEAMS)
 
 
 def fetch_pitching_stats(
@@ -92,6 +87,9 @@ def fetch_pitching_stats(
     season_id: str = DEFAULT_SEASON_ID,
 ) -> pd.DataFrame | None:
     """Fetch aggregated season pitching stats for one player."""
+    if DATA_SOURCE == "sample":
+        return load_sample_pitching_stats(playerlinkid)
+
     url = f"{POINTSTREAK_BASE_URL}/player/stats/{playerlinkid}/{season_id}/json"
     try:
         res = _ps_session.get(url)
@@ -124,6 +122,9 @@ def fetch_pitching_stats(
 
 def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
     """Look up a pitcher's ALPB ID by name.  Returns a dict or *None*."""
+    if DATA_SOURCE == "sample":
+        return load_sample_pitcher_info(fname, lname)
+
     url = f"{ALPB_BASE_URL}/players"
     for query in _alpb_query_candidates(fname, lname):
         try:
@@ -270,6 +271,9 @@ def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
     """Fetch all pitch-by-pitch Trackman data for one pitcher (paginated)."""
     if not player_id:
         return None
+    if DATA_SOURCE == "sample":
+        return load_sample_pitches(player_id)
+
     url = f"{ALPB_BASE_URL}/pitches"
 
     # `/pitches` pagination metadata is inconsistent across API versions.

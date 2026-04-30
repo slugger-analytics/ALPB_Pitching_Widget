@@ -4,13 +4,15 @@ services:
     env: python
     plan: free
     autoDeploy: true
-    buildCommand: pip install -r python_app/requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn python_app.app:server --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: POINTSTREAK_API_KEY
         sync: false
       - key: ALPB_API_KEY
         sync: false
+      - key: DATA_SOURCE
+        value: live
       - key: DASH_DEBUG
         value: "false"

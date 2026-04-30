@@ -1,0 +1,3 @@
+playerid,playerlinkid,fname,lname,position,height,weight,birthday,bats,throws,hometown,photo,teamlinkid,teamname
+1001,ps-001,Alex,Ramirez,P,6-2,210,1998-04-11,R,R,Miami FL,,team-01,York Revolution
+1002,ps-002,Ben,Carter,P,6-4,225,1996-09-03,L,L,Austin TX,,team-02,Lancaster Stormers

@@ -59,6 +59,15 @@ ALPB_BASE_URL = os.getenv(
     "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI",
 )
 
+# ── Data source selection ────────────────────────────────────────────────────
+DATA_SOURCE = os.getenv("DATA_SOURCE", "live").strip().lower()
+SAMPLE_DATA_DIR = Path(
+    os.getenv(
+        "SAMPLE_DATA_DIR",
+        str(Path(__file__).resolve().parents[1] / "data" / "sample"),
+    )
+)
+
 # ── Season / roster filters ─────────────────────────────────────────────────
 DEFAULT_SEASON_ID = os.getenv("DEFAULT_SEASON_ID", "34102")
 EXCLUDED_TEAMS: set[str] = {"California Dogecoin", "Long Island Black Sox"}

@@ -1,4 +1,21 @@
 .env
+.env.local
 .venv/
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
 .DS_Store
 python_app/.DS_Store
+
+# Local runtime artifacts
+tmp/
+output/sample_review/
+
+# Private data should stay out of the public repo.
+data/*
+!data/README.md
+!data/sample/
+!data/sample/**

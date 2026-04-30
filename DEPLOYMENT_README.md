@@ -13,7 +13,7 @@ Provide a reproducible deployment path for the Dash app and maintain one stable 
 ## 3. Required Files in Repository
 
 - `render.yaml` (Blueprint config)
-- `python_app/requirements.txt`
+- `requirements.txt`
 - `python_app/app.py` (exposes `server = app.server`)
 
 ## 4. Deploy with Render Blueprint (Recommended)
@@ -25,6 +25,7 @@ Provide a reproducible deployment path for the Dash app and maintain one stable 
 5. In service environment variables, set:
    - `POINTSTREAK_API_KEY`
    - `ALPB_API_KEY`
+   - `DATA_SOURCE=live`
    - `DASH_DEBUG=false`
 6. Deploy.
 
@@ -33,7 +34,7 @@ Provide a reproducible deployment path for the Dash app and maintain one stable 
 If Blueprint is not used, configure the service manually:
 
 - Runtime: `Python`
-- Build command: `pip install -r python_app/requirements.txt`
+- Build command: `pip install -r requirements.txt`
 - Start command: `gunicorn python_app.app:server --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
 - Health check path: `/healthz`
 
@@ -45,6 +46,7 @@ Optional overrides:
 - `POINTSTREAK_BASE_URL`
 - `ALPB_BASE_URL`
 - `DEFAULT_SEASON_ID`
+- `DATA_SOURCE`
 - `DASH_DEBUG`
 
 ## 6. Post-Deploy Validation Checklist

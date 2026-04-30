@@ -8,3 +8,6 @@ __pycache__/
 .env
 python_app/.DS_Store
 docs/
+tmp/
+output/sample_review/
+data/private/
