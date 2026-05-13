@@ -99,7 +99,7 @@ except ImportError:
 def download_pdf(
     player_clicks: int | None,
     team_clicks: int | None,
-    selected_playerlinkid: str | None,
+    selected_iscore_guid: str | None,
     selected_team: str | None,
     pitch_records: list[dict] | None,
     tag: str | None,
@@ -110,14 +110,14 @@ def download_pdf(
         triggered = ctx.triggered_id
 
         if triggered == "download-pdf-btn":
-            if not player_clicks or not selected_playerlinkid:
+            if not player_clicks or not selected_iscore_guid:
                 return no_update
-            player = cache.get_player(selected_playerlinkid)
+            player = cache.get_player(selected_iscore_guid)
             if player is None:
                 return no_update
 
             selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
-            stats = cache.get_season_stats(str(player["playerlinkid"]))
+            stats = cache.get_season_stats(str(player["iscore_guid"]))
             pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
 
             pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, pitch_tag)
@@ -153,28 +153,28 @@ def _team_sorted(players: pd.DataFrame) -> pd.DataFrame:
         return players
 
     deduped = players.copy()
-    deduped["playerlinkid"] = deduped["playerlinkid"].fillna("").astype(str).str.strip()
+    deduped["iscore_guid"] = deduped["iscore_guid"].fillna("").astype(str).str.strip()
     deduped["full_name"] = deduped["full_name"].fillna("").astype(str).str.strip()
 
-    with_id = deduped[deduped["playerlinkid"] != ""]
-    no_id = deduped[deduped["playerlinkid"] == ""]
+    with_id = deduped[deduped["iscore_guid"] != ""]
+    no_id = deduped[deduped["iscore_guid"] == ""]
 
-    with_id = with_id.drop_duplicates(subset=["playerlinkid"], keep="first")
+    with_id = with_id.drop_duplicates(subset=["iscore_guid"], keep="first")
     no_id = no_id.drop_duplicates(subset=["full_name"], keep="first")
 
     unique_players = pd.concat([with_id, no_id], ignore_index=True)
     return unique_players.sort_values(
-        ["lname", "fname", "full_name", "playerlinkid"],
+        ["lname", "fname", "full_name", "iscore_guid"],
         na_position="last",
     )
 
 
 def _pitch_df_for_player(player: pd.Series) -> pd.DataFrame | None:
     """Fetch ALPB pitch-level data for one player."""
-    playerlinkid = str(player.get("playerlinkid", "")).strip()
-    if not playerlinkid:
+    iscore_guid = str(player.get("iscore_guid", "")).strip()
+    if not iscore_guid:
         return None
-    alpb_id = cache.get_alpb_id(playerlinkid)
+    alpb_id = cache.get_alpb_id(iscore_guid)
     if not alpb_id:
         return None
     records = cache.get_pitch_data(alpb_id)
@@ -417,8 +417,8 @@ def _generate_team_pdf(
     with PdfPages(output_path) as pdf:
         for _, player in _team_sorted(team_players).iterrows():
             name = str(player.get("full_name", "")).strip() or "Pitcher"
-            playerlinkid = str(player.get("playerlinkid", "")).strip()
-            stats = cache.get_season_stats(playerlinkid) if playerlinkid else None
+            iscore_guid = str(player.get("iscore_guid", "")).strip()
+            stats = cache.get_season_stats(iscore_guid) if iscore_guid else None
             pitch_df = _pitch_df_for_player(player)
             _append_player_page(
                 pdf=pdf,
@@ -470,12 +470,10 @@ def _append_player_page(
             heatmap_images.append(_plotly_to_image(hfig, width=620, height=340))
             del hfig
 
-    photo = _download_photo(player.get("photo", ""))
     _build_page(
         pdf,
         name=name,
         player=player,
-        photo=photo,
         season_stats=season_stats,
         split_df=split_df,
         scatter_images=scatter_images,
@@ -543,7 +541,6 @@ def _build_page(
     *,
     name: str,
     player: pd.Series,
-    photo: Image.Image | None,
     season_stats: pd.DataFrame | None,
     split_df: pd.DataFrame | None,
     scatter_images: list[np.ndarray | None],
@@ -563,14 +560,14 @@ def _build_page(
 
     _section_label(fig, r0_label, "PITCHER INFORMATION & SEASON STATS")
 
-    lw = page_w * 0.36
+    lw = page_w * 0.20
     rw = page_w - lw - _GAP
     lx = _LR
     rx = lx + lw + _GAP
 
     _draw_bordered_rect(fig, lx, r0_bot, lw, r0_h)
     _draw_bordered_rect(fig, rx, r0_bot, rw, r0_h)
-    _layout_pitcher_card(fig, lx, r0_bot, lw, r0_h, player, photo)
+    _layout_pitcher_card(fig, lx, r0_bot, lw, r0_h, player)
     _layout_stats_card(fig, rx, r0_bot, rw, r0_h, season_stats)
 
     # ── Row 1: Pitch Movement (2 scatter charts) ──────────────────────────
@@ -681,38 +678,14 @@ def _layout_pitcher_card(
     fig: plt.Figure,
     x0: float, y0: float, w: float, h: float,
     player: pd.Series,
-    photo: Image.Image | None,
 ) -> None:
-    """Pitcher Information card: navy header → photo (left) + centred bio (right)."""
+    """Pitcher Information card: navy header + bio fields."""
     _draw_navy_header(fig, x0, y0 + h - _HDR, w, _HDR, "Pitcher Information")
 
     cy0 = y0 + _PAD
     ch  = h - _HDR - 2 * _PAD
 
-    # Photo — left ~40 %
-    pw = w * 0.38
-    ax_photo = fig.add_axes([x0 + _PAD, cy0, pw, ch])
-    ax_photo.axis("off")
-    ax_photo.set_facecolor(_LGRAY)
-    if photo is not None:
-        # Convert PIL Image → RGBA numpy array so matplotlib renders
-        # colour correctly (palette-mode GIFs would otherwise be blank).
-        arr = np.asarray(photo.convert("RGBA"))
-        ax_photo.imshow(arr, aspect="equal")
-        ax_photo.set_anchor("C")
-        for sp in ax_photo.spines.values():
-            sp.set_visible(True)
-            sp.set_color(_MGRAY)
-            sp.set_linewidth(0.8)
-    else:
-        ax_photo.text(0.5, 0.5, "No photo",
-                      ha="center", va="center", fontsize=7, color="gray",
-                      transform=ax_photo.transAxes)
-
-    # Bio — right portion, wrapped to stay within the card.
-    bio_left  = x0 + _PAD + pw + 0.008
-    bio_right = x0 + w - _PAD
-    ax_bio = fig.add_axes([bio_left, cy0, bio_right - bio_left, ch])
+    ax_bio = fig.add_axes([x0 + _PAD, cy0, w - 2 * _PAD, ch])
     ax_bio.axis("off")
 
     fields = [

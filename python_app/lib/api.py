@@ -20,6 +20,10 @@ from python_app.config import (
     DATA_SOURCE,
     DEFAULT_SEASON_ID,
     EXCLUDED_TEAMS,
+    ISCORE_BASE_URL,
+    ISCORE_LEAGUE_GUID,
+    ISCORE_SEASON_GUID,
+    ISCORE_SEASON_NAME,
     LEAGUE_ID,
     MAX_WORKERS,
     POINTSTREAK_API_KEY,
@@ -39,6 +43,8 @@ _ps_session.headers.update({"apikey": POINTSTREAK_API_KEY})
 
 _alpb_session = requests.Session()
 _alpb_session.headers.update({"x-api-key": ALPB_API_KEY})
+
+_iscore_session = requests.Session()  # no auth required
 
 _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
@@ -265,6 +271,239 @@ def _strip_suffix_raw(value: str) -> str:
             continue
         break
     return " ".join(tokens)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  iScore
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Stat key aliases from iScore → our canonical names
+_ISCORE_STAT_ALIASES: dict[str, str] = {
+    "strikeouts": "so",
+    "k": "so",
+    "walks": "bb",
+    "innings_pitched": "ip",
+    "earned_runs": "er",
+    "hits_allowed": "h",
+    "games_played": "gp",
+    "games_started": "gs",
+    "saves": "sv",
+    "wins": "w",
+    "losses": "l",
+    "earned_run_average": "era",
+}
+
+_PITCHER_POSITION_TOKENS: frozenset[str] = frozenset(
+    {"p", "sp", "rp", "cp", "cl", "pitcher", "pitchers",
+     "starting pitcher", "relief pitcher", "closer"}
+)
+
+
+def fetch_iscore_teams(league_guid: str) -> list[dict]:
+    """Fetch all teams in an iScore league."""
+    url = f"{ISCORE_BASE_URL}/public/leagues/{league_guid}/teams"
+    try:
+        res = _iscore_session.get(url, timeout=15)
+        res.raise_for_status()
+        return res.json() or []
+    except Exception:
+        return []
+
+
+def _iscore_team_pitchers(team: dict) -> list[dict]:
+    """Fetch pitcher rows from one iScore team roster."""
+    tid = team["guid"]
+    tname = team["name"]
+    url = f"{ISCORE_BASE_URL}/public/teams/{tid}/players"
+    try:
+        res = _iscore_session.get(url, timeout=15)
+        if res.status_code != 200:
+            return []
+        players = res.json()
+    except Exception:
+        return []
+    if not players:
+        return []
+
+    result: list[dict] = []
+    for p in players:
+        if not p.get("active", True):
+            continue
+        pg = p.get("positionGroup") or {}
+        pos_name = str(pg.get("name", "")).strip()
+        if pos_name.lower() not in _PITCHER_POSITION_TOKENS:
+            continue
+
+        full = " ".join(str(p.get("name", "")).split())
+        parts = full.split(" ", 1)
+        fname = parts[0] if parts else ""
+        lname = parts[1] if len(parts) > 1 else ""
+
+        result.append({
+            "iscore_guid":  str(p.get("guid", "")),
+            "fname":        fname,
+            "lname":        lname,
+            "full_name":    full,
+            "teamname":     tname,
+            "bats":         _safe_str(p.get("bats")),
+            "throws":       _safe_str(p.get("throwsHand")),
+            "height":       _safe_str(p.get("height")),
+            "weight":       _safe_str(p.get("weight")),
+            "number":       _safe_str(p.get("number")),
+            "position":     pos_name,
+            # PS-sourced fields filled in after name-match merge
+            "playerlinkid": "",
+            "playerid":     "",
+            "photo":        "",
+            "hometown":     "",
+            "birthday":     "",
+        })
+    return result
+
+
+def fetch_iscore_pitchers(league_guid: str) -> pd.DataFrame:
+    """Fetch all pitchers across all iScore teams for the league."""
+    teams = fetch_iscore_teams(league_guid)
+    if not teams:
+        return pd.DataFrame()
+
+    all_pitchers: list[dict] = []
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(_iscore_team_pitchers, t): t for t in teams}
+        for fut in as_completed(futures):
+            try:
+                all_pitchers.extend(fut.result())
+            except Exception:
+                continue
+
+    if not all_pitchers:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(all_pitchers)
+    df = df[~df["teamname"].isin(EXCLUDED_TEAMS)]
+
+    bad = {"", "unknown", "nan", "none", "null", "/"}
+    df = df[
+        ~df["fname"].str.lower().isin(bad)
+        & ~df["lname"].str.lower().isin(bad)
+    ]
+    return df.sort_values("lname").reset_index(drop=True)
+
+
+def merge_iscore_with_ps(iscore_df: pd.DataFrame, ps_df: pd.DataFrame) -> pd.DataFrame:
+    """Enrich iScore roster with Pointstreak fields matched by normalized full name.
+
+    Team names are the same between systems; only the player IDs differ.
+    Players new to the league simply get empty PS fields.
+    """
+    if ps_df.empty or iscore_df.empty:
+        return iscore_df
+
+    ps_cols = ["playerlinkid", "playerid", "photo", "hometown", "birthday"]
+
+    # Build PS lookup keyed by normalized "fname lname"
+    ps_name_key = (ps_df["fname"] + " " + ps_df["lname"]).apply(_normalize_name)
+    ps_enrich = (
+        ps_df.assign(_name_key=ps_name_key)[["_name_key"] + ps_cols]
+        .drop_duplicates("_name_key")
+    )
+
+    # Drop the empty placeholder columns from the iScore df before merging
+    iscore_copy = iscore_df.drop(columns=ps_cols, errors="ignore").copy()
+    iscore_copy["_name_key"] = iscore_copy["full_name"].apply(_normalize_name)
+
+    merged = iscore_copy.merge(ps_enrich, on="_name_key", how="left")
+    for col in ps_cols:
+        if col not in merged.columns:
+            merged[col] = ""
+        merged[col] = merged[col].fillna("").astype(str)
+
+    merged.drop(columns=["_name_key"], inplace=True, errors="ignore")
+    return merged.reset_index(drop=True)
+
+
+def fetch_all_pitchers_combined(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
+    """Fetch pitchers from iScore (authoritative roster) + Pointstreak (for IDs/photos).
+
+    Falls back to Pointstreak-only when ISCORE_LEAGUE_GUID is not configured.
+    """
+    ps_df = fetch_all_pitchers(season_id)
+
+    if not ISCORE_LEAGUE_GUID:
+        # iScore not configured — use PS roster with iscore_guid aliased to playerlinkid
+        if not ps_df.empty:
+            ps_df = ps_df.copy()
+            ps_df["iscore_guid"] = ps_df["playerlinkid"].astype(str)
+        return ps_df
+
+    iscore_df = fetch_iscore_pitchers(ISCORE_LEAGUE_GUID)
+    if iscore_df.empty:
+        # iScore returned nothing — fall back to PS
+        if not ps_df.empty:
+            ps_df = ps_df.copy()
+            ps_df["iscore_guid"] = ps_df["playerlinkid"].astype(str)
+        return ps_df
+
+    return merge_iscore_with_ps(iscore_df, ps_df)
+
+
+def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
+    """Fetch season pitching stats for one iScore player."""
+    if not player_guid:
+        return None
+    url = f"{ISCORE_BASE_URL}/player-stats"
+    params: dict = {"playerId": player_guid}
+    if ISCORE_SEASON_GUID:
+        params["seasonId"] = ISCORE_SEASON_GUID
+    try:
+        res = _iscore_session.get(url, params=params, timeout=15)
+        if res.status_code != 200:
+            return None
+        data = res.json()
+    except Exception:
+        return None
+
+    if not isinstance(data, list) or not data:
+        return None
+
+    entry = next(
+        (e for e in data if str(e.get("playerId", "")).lower() == player_guid.lower()),
+        data[0],
+    )
+
+    # Response shape: stats.pitching.overall + stats.pitching.overall.RATES
+    raw_stats = entry.get("stats") or {}
+    pitching = raw_stats.get("pitching") or {}
+    overall = pitching.get("overall") or {}
+    rates = overall.get("RATES") or {}
+
+    if not overall:
+        return None
+
+    outs = overall.get("OUTS_PITCHED", 0) or 0
+    ip_full = int(outs) // 3
+    ip_rem  = int(outs) % 3
+    ip = float(f"{ip_full}.{ip_rem}") if ip_rem else float(ip_full)
+
+    fname = str(entry.get("firstName", "")).strip()
+    lname = str(entry.get("lastName", "")).strip()
+
+    normalized: dict = {
+        "name": ISCORE_SEASON_NAME,
+        "gs":   overall.get("GS"),
+        "sv":   overall.get("SV"),
+        "er":   overall.get("ER"),
+        "h":    overall.get("H"),
+        "bb":   overall.get("BB"),
+        "so":   overall.get("SO"),
+        "ip":   ip,
+        "era":  rates.get("ERA"),
+    }
+
+    stat_order = ["name", "teamname", "gs", "era", "er", "h", "bb", "so", "ip", "sv"]
+    df = pd.DataFrame([normalized])
+    cols = [c for c in stat_order if c in df.columns]
+    return df[cols] if cols else df
 
 
 def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:

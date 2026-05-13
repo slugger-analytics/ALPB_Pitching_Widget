@@ -19,19 +19,10 @@ from python_app.lib.styles import info_card
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def layout():
-    """Card with pitcher photo (left) and bio text (right)."""
+    """Card with pitcher bio details."""
     return info_card(
         "Pitcher Information",
-        dbc.Row([
-            dbc.Col(
-                html.Div(id="player-photo", className="player-photo"),
-                width=5,
-            ),
-            dbc.Col(
-                html.Div(id="player-info", className="player-bio"),
-                width=7,
-            ),
-        ], className="align-items-start"),
+        html.Div(id="player-info", className="player-bio"),
     )
 
 
@@ -40,35 +31,15 @@ def layout():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @callback(
-    Output("player-photo", "children"),
     Output("player-info", "children"),
     Input("selected-player", "value"),
 )
-def update_player_info(selected_playerlinkid: str | None):
+def update_player_info(iscore_guid: str | None):
     """Refresh the player card when a new pitcher is chosen."""
-    player = cache.get_player(selected_playerlinkid)
+    player = cache.get_player(iscore_guid)
     if player is None:
-        return "", ""
+        return ""
 
-    # Photo
-    img_url = player.get("photo", "")
-    photo = (
-        html.Img(
-            src=img_url,
-            style={
-                "width": "100%",
-                "borderRadius": "6px",
-                "border": "2px solid #dcdde1",
-            },
-        )
-        if img_url
-        else html.P(
-            "No photo available.",
-            style={"color": "#999", "fontStyle": "italic"},
-        )
-    )
-
-    # Bio fields — same fields as the PDF bio section
     bio_fields = [
         ("Name",     player["full_name"]),
         ("Team",     player.get("teamname", "")),
@@ -79,19 +50,24 @@ def update_player_info(selected_playerlinkid: str | None):
         ("Hometown", player.get("hometown", "")),
     ]
 
-    info = html.Div(
+    visible = [(label, str(value)) for label, value in bio_fields if value]
+
+    return html.Div(
+        className="player-bio",
         style={"marginTop": "4px"},
         children=[
             html.Div(
-                [html.B(f"{label}: "), str(value)],
-                style={
-                    "padding": "3px 0",
-                    "fontSize": "0.88rem",
-                    "borderBottom": "1px solid #f5f6fa",
-                },
+                [
+                    html.Div(
+                        [html.Span(f"{lbl}:", className="bio-label") for lbl, _ in visible],
+                        className="bio-col-labels",
+                    ),
+                    html.Div(
+                        [html.Span(val, className="bio-value") for _, val in visible],
+                        className="bio-col-values",
+                    ),
+                ],
+                className="bio-grid",
             )
-            for label, value in bio_fields
-            if value
         ],
     )
-    return photo, info

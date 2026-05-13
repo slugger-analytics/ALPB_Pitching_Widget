@@ -64,20 +64,20 @@ _ALL_TEAMS = "__ALL_TEAMS__"
 
 
 def _build_player_options(team_name: str | None) -> list[dict[str, str]]:
-    """Build dropdown options using unique ``playerlinkid`` values."""
+    """Build dropdown options using unique ``iscore_guid`` values."""
     team_filter = None if team_name in (None, _ALL_TEAMS) else team_name
     df = cache.get_players(team_filter)
     if df.empty:
         return []
 
     display = df.sort_values(
-        ["lname", "fname", "teamname", "playerlinkid"],
+        ["lname", "fname", "teamname", "iscore_guid"],
         na_position="last",
     )
     show_team = team_filter is None
     options: list[dict[str, str]] = []
     for _, row in display.iterrows():
-        player_id = str(row.get("playerlinkid", "")).strip()
+        player_id = str(row.get("iscore_guid", "")).strip()
         if player_id.lower() in {"", "nan", "none", "null"}:
             continue
         label = str(row.get("full_name", "")).strip()
@@ -197,8 +197,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
         # ── Section 1: Pitcher Info + Season Stats ────────────────────
         section_label("Pitcher Information & Season Stats"),
         dbc.Row([
-            dbc.Col(player_info.layout(), width=4),
-            dbc.Col(season_stats.layout(), width=8),
+            dbc.Col(player_info.layout(), width=3),
+            dbc.Col(season_stats.layout(), width=9),
         ], className="gx-3 mb-3"),
 
         # ── ALPB Trackman sections (hidden when no ALPB data) ─────────
@@ -301,9 +301,9 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @callback(Output("alpb-player-id-store", "data"), Input("selected-player", "value"))
-def lookup_alpb_id(playerlinkid: str | None):
-    """Resolve the selected Pointstreak playerlinkid to an ALPB player ID."""
-    return cache.get_alpb_id(playerlinkid) if playerlinkid else None
+def lookup_alpb_id(iscore_guid: str | None):
+    """Resolve the selected iScore GUID to an ALPB Trackman player ID."""
+    return cache.get_alpb_id(iscore_guid) if iscore_guid else None
 
 
 @callback(
@@ -314,13 +314,13 @@ def lookup_alpb_id(playerlinkid: str | None):
 )
 def update_player_dropdown(
     selected_team: str | None,
-    current_playerlinkid: str | None,
+    current_iscore_guid: str | None,
 ):
     """Filter player options by team and keep current selection when valid."""
     options = _build_player_options(selected_team)
     valid_values = {opt["value"] for opt in options}
-    if current_playerlinkid in valid_values:
-        return options, current_playerlinkid
+    if current_iscore_guid in valid_values:
+        return options, current_iscore_guid
     next_value = options[0]["value"] if options else None
     return options, next_value
 

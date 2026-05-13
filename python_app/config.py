@@ -125,5 +125,14 @@ TABLE_STYLE_DATA_CONDITIONAL: list[dict] = [
     {"if": {"row_index": "odd"}, "backgroundColor": BRAND_LIGHT_GRAY},
 ]
 
+# ── iScore API ───────────────────────────────────────────────────────────────
+ISCORE_BASE_URL = os.getenv(
+    "ISCORE_BASE_URL",
+    "https://api.microservices.iscoresports.com/api",
+)
+ISCORE_LEAGUE_GUID = os.getenv("ISCORE_LEAGUE_GUID", "")
+ISCORE_SEASON_GUID = os.getenv("ISCORE_SEASON_GUID", "")
+ISCORE_SEASON_NAME = os.getenv("ISCORE_SEASON_NAME", "ALPB 2026")
+
 # ── Parallel-fetch settings ──────────────────────────────────────────────────
 MAX_WORKERS: int = 8
