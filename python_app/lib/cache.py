@@ -4,10 +4,6 @@ Data-caching service.
 Wraps the raw :mod:`python_app.lib.api` module so that every caller gets
 transparent, in-memory caching.  Feature modules should import from here
 — never directly from ``lib.api``.
-
-The primary player key throughout is ``iscore_guid`` (iScore GUID).
-When iScore is not configured the field is aliased to the Pointstreak
-``playerlinkid`` so the rest of the app is unaffected.
 """
 
 from __future__ import annotations
@@ -19,7 +15,6 @@ from python_app.lib.api import (
     fetch_alpb_pitcher_info,
     fetch_alpb_pitches,
     fetch_iscore_player_stats,
-    fetch_pitching_stats,
 )
 
 
@@ -35,7 +30,7 @@ class DataCache:
     # ── Roster ────────────────────────────────────────────────────────────
 
     def load_roster(self) -> None:
-        """Fetch and cache the full league roster from iScore + Pointstreak."""
+        """Fetch and cache the full league roster from iScore."""
         self._pitchers_df = fetch_all_pitchers_combined()
 
     @property
@@ -100,44 +95,20 @@ class DataCache:
     # ── Season stats ──────────────────────────────────────────────────────
 
     def get_season_stats(self, iscore_guid: str) -> pd.DataFrame | None:
-        """Return cached combined season stats (iScore + Pointstreak)."""
+        """Return cached season stats from iScore."""
         if iscore_guid in self._season_stats:
             return self._season_stats[iscore_guid]
 
         player = self.get_player(iscore_guid)
+        combined: pd.DataFrame | None = None
 
-        # iScore stats
-        iscore_stats: pd.DataFrame | None = None
-        # Skip iScore lookup for PS-alias GUIDs (fallback mode)
-        if player is not None and iscore_guid and not iscore_guid.isdigit():
+        if player is not None and iscore_guid:
             try:
-                iscore_stats = fetch_iscore_player_stats(iscore_guid)
-                if iscore_stats is not None:
-                    iscore_stats["teamname"] = str(player.get("teamname", ""))
+                combined = fetch_iscore_player_stats(iscore_guid)
+                if combined is not None:
+                    combined["teamname"] = str(player.get("teamname", ""))
             except Exception:
-                iscore_stats = None
-
-        # Pointstreak stats
-        ps_stats: pd.DataFrame | None = None
-        ps_linkid = str(player["playerlinkid"]).strip() if player is not None else ""
-        bad = {"", "nan", "none", "null"}
-        if ps_linkid.lower() not in bad:
-            try:
-                ps_stats = fetch_pitching_stats(ps_linkid)
-            except Exception:
-                ps_stats = None
-
-        # Combine — iScore rows first, then PS rows; no recalculation
-        if iscore_stats is not None and ps_stats is not None:
-            combined: pd.DataFrame | None = pd.concat(
-                [iscore_stats, ps_stats], ignore_index=True
-            )
-        elif iscore_stats is not None:
-            combined = iscore_stats
-        elif ps_stats is not None:
-            combined = ps_stats
-        else:
-            combined = None
+                combined = None
 
         if combined is not None:
             for col in ("gp", "w", "l"):

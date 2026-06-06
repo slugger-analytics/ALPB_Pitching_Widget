@@ -44,14 +44,6 @@ if load_dotenv is not None:
 else:
     _load_dotenv_fallback(_dotenv_path)
 
-# ── Pointstreak API ──────────────────────────────────────────────────────────
-POINTSTREAK_API_KEY = os.getenv("POINTSTREAK_API_KEY", "")
-POINTSTREAK_BASE_URL = os.getenv(
-    "POINTSTREAK_BASE_URL",
-    "https://api.pointstreak.com/baseball",
-)
-LEAGUE_ID = os.getenv("POINTSTREAK_LEAGUE_ID", "174")
-
 # ── ALPB Trackman API ────────────────────────────────────────────────────────
 ALPB_API_KEY = os.getenv("ALPB_API_KEY", "")
 ALPB_BASE_URL = os.getenv(
@@ -59,17 +51,7 @@ ALPB_BASE_URL = os.getenv(
     "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI",
 )
 
-# ── Data source selection ────────────────────────────────────────────────────
-DATA_SOURCE = os.getenv("DATA_SOURCE", "live").strip().lower()
-SAMPLE_DATA_DIR = Path(
-    os.getenv(
-        "SAMPLE_DATA_DIR",
-        str(Path(__file__).resolve().parents[1] / "data" / "sample"),
-    )
-)
-
 # ── Season / roster filters ─────────────────────────────────────────────────
-DEFAULT_SEASON_ID = os.getenv("DEFAULT_SEASON_ID", "34102")
 EXCLUDED_TEAMS: set[str] = {"California Dogecoin", "Long Island Black Sox"}
 
 # ── Brand colours (shared by Dash UI and PDF export) ─────────────────────────

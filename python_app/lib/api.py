@@ -1,5 +1,5 @@
 """
-API clients for Pointstreak and ALPB Trackman.
+API clients for iScore and ALPB Trackman.
 
 All external HTTP calls live here.  No caching — that responsibility
 belongs to :mod:`python_app.lib.cache`.
@@ -17,29 +17,13 @@ import requests
 from python_app.config import (
     ALPB_API_KEY,
     ALPB_BASE_URL,
-    DATA_SOURCE,
-    DEFAULT_SEASON_ID,
     EXCLUDED_TEAMS,
     ISCORE_BASE_URL,
     ISCORE_LEAGUE_GUID,
     ISCORE_SEASON_GUID,
     ISCORE_SEASON_NAME,
-    LEAGUE_ID,
     MAX_WORKERS,
-    POINTSTREAK_API_KEY,
-    POINTSTREAK_BASE_URL,
 )
-from python_app.lib.conditioning import clean_pitcher_roster
-from python_app.lib.sample_data import (
-    load_sample_pitches,
-    load_sample_pitcher_info,
-    load_sample_pitchers,
-    load_sample_pitching_stats,
-)
-
-# Persistent HTTP sessions for connection reuse
-_ps_session = requests.Session()
-_ps_session.headers.update({"apikey": POINTSTREAK_API_KEY})
 
 _alpb_session = requests.Session()
 _alpb_session.headers.update({"x-api-key": ALPB_API_KEY})
@@ -50,87 +34,11 @@ _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Pointstreak
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def fetch_all_pitchers(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
-    """Fetch every pitcher across all ALPB teams for *season_id*."""
-    if DATA_SOURCE == "sample":
-        return load_sample_pitchers()
-
-    url = f"{POINTSTREAK_BASE_URL}/league/structure/{LEAGUE_ID}/json"
-
-    res = _ps_session.get(url, params={"seasonid": season_id})
-    res.raise_for_status()
-    parsed = res.json()
-
-    season = _find_season(parsed, season_id)
-    if season is None:
-        return pd.DataFrame()
-
-    teams: list[dict] = []
-    for div in season["division"]:
-        teams.extend(div["team"])
-
-    # Parallel roster fetching
-    all_pitchers: list[dict] = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(_team_pitchers, t, season_id): t for t in teams}
-        for fut in as_completed(futures):
-            try:
-                all_pitchers.extend(fut.result())
-            except Exception:
-                continue
-
-    if not all_pitchers:
-        return pd.DataFrame()
-
-    return clean_pitcher_roster(pd.DataFrame(all_pitchers), EXCLUDED_TEAMS)
-
-
-def fetch_pitching_stats(
-    playerlinkid: str,
-    season_id: str = DEFAULT_SEASON_ID,
-) -> pd.DataFrame | None:
-    """Fetch aggregated season pitching stats for one player."""
-    if DATA_SOURCE == "sample":
-        return load_sample_pitching_stats(playerlinkid)
-
-    url = f"{POINTSTREAK_BASE_URL}/player/stats/{playerlinkid}/{season_id}/json"
-    try:
-        res = _ps_session.get(url)
-        if res.status_code != 200:
-            return None
-        parsed = res.json()
-    except Exception:
-        return None
-
-    player = parsed.get("player")
-    if not player or not isinstance(player, dict):
-        return None
-    obj = player.get("pitchingstats")
-    if not obj or not isinstance(obj, dict):
-        return None
-    data = obj.get("season")
-    if data is None:
-        return None
-    if isinstance(data, dict):
-        data = [data]
-    df = pd.DataFrame(data)
-    stat_order = ["name", "teamname", "gp", "gs", "w", "l", "era", "er", "h", "bb", "so", "ip", "sv"]
-    cols = [c for c in stat_order if c in df.columns]
-    return df[cols]
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 #  ALPB Trackman
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
     """Look up a pitcher's ALPB ID by name.  Returns a dict or *None*."""
-    if DATA_SOURCE == "sample":
-        return load_sample_pitcher_info(fname, lname)
-
     url = f"{ALPB_BASE_URL}/players"
     for query in _alpb_query_candidates(fname, lname):
         try:
@@ -277,22 +185,6 @@ def _strip_suffix_raw(value: str) -> str:
 #  iScore
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Stat key aliases from iScore → our canonical names
-_ISCORE_STAT_ALIASES: dict[str, str] = {
-    "strikeouts": "so",
-    "k": "so",
-    "walks": "bb",
-    "innings_pitched": "ip",
-    "earned_runs": "er",
-    "hits_allowed": "h",
-    "games_played": "gp",
-    "games_started": "gs",
-    "saves": "sv",
-    "wins": "w",
-    "losses": "l",
-    "earned_run_average": "era",
-}
-
 _PITCHER_POSITION_TOKENS: frozenset[str] = frozenset(
     {"p", "sp", "rp", "cp", "cl", "pitcher", "pitchers",
      "starting pitcher", "relief pitcher", "closer"}
@@ -340,23 +232,17 @@ def _iscore_team_pitchers(team: dict) -> list[dict]:
         lname = parts[1] if len(parts) > 1 else ""
 
         result.append({
-            "iscore_guid":  str(p.get("guid", "")),
-            "fname":        fname,
-            "lname":        lname,
-            "full_name":    full,
-            "teamname":     tname,
-            "bats":         _safe_str(p.get("bats")),
-            "throws":       _safe_str(p.get("throwsHand")),
-            "height":       _safe_str(p.get("height")),
-            "weight":       _safe_str(p.get("weight")),
-            "number":       _safe_str(p.get("number")),
-            "position":     pos_name,
-            # PS-sourced fields filled in after name-match merge
-            "playerlinkid": "",
-            "playerid":     "",
-            "photo":        "",
-            "hometown":     "",
-            "birthday":     "",
+            "iscore_guid": str(p.get("guid", "")),
+            "fname":       fname,
+            "lname":       lname,
+            "full_name":   full,
+            "teamname":    tname,
+            "bats":        _safe_str(p.get("bats")),
+            "throws":      _safe_str(p.get("throwsHand")),
+            "height":      _safe_str(p.get("height")),
+            "weight":      _safe_str(p.get("weight")),
+            "number":      _safe_str(p.get("number")),
+            "position":    pos_name,
         })
     return result
 
@@ -390,61 +276,11 @@ def fetch_iscore_pitchers(league_guid: str) -> pd.DataFrame:
     return df.sort_values("lname").reset_index(drop=True)
 
 
-def merge_iscore_with_ps(iscore_df: pd.DataFrame, ps_df: pd.DataFrame) -> pd.DataFrame:
-    """Enrich iScore roster with Pointstreak fields matched by normalized full name.
-
-    Team names are the same between systems; only the player IDs differ.
-    Players new to the league simply get empty PS fields.
-    """
-    if ps_df.empty or iscore_df.empty:
-        return iscore_df
-
-    ps_cols = ["playerlinkid", "playerid", "photo", "hometown", "birthday"]
-
-    # Build PS lookup keyed by normalized "fname lname"
-    ps_name_key = (ps_df["fname"] + " " + ps_df["lname"]).apply(_normalize_name)
-    ps_enrich = (
-        ps_df.assign(_name_key=ps_name_key)[["_name_key"] + ps_cols]
-        .drop_duplicates("_name_key")
-    )
-
-    # Drop the empty placeholder columns from the iScore df before merging
-    iscore_copy = iscore_df.drop(columns=ps_cols, errors="ignore").copy()
-    iscore_copy["_name_key"] = iscore_copy["full_name"].apply(_normalize_name)
-
-    merged = iscore_copy.merge(ps_enrich, on="_name_key", how="left")
-    for col in ps_cols:
-        if col not in merged.columns:
-            merged[col] = ""
-        merged[col] = merged[col].fillna("").astype(str)
-
-    merged.drop(columns=["_name_key"], inplace=True, errors="ignore")
-    return merged.reset_index(drop=True)
-
-
-def fetch_all_pitchers_combined(season_id: str = DEFAULT_SEASON_ID) -> pd.DataFrame:
-    """Fetch pitchers from iScore (authoritative roster) + Pointstreak (for IDs/photos).
-
-    Falls back to Pointstreak-only when ISCORE_LEAGUE_GUID is not configured.
-    """
-    ps_df = fetch_all_pitchers(season_id)
-
+def fetch_all_pitchers_combined() -> pd.DataFrame:
+    """Fetch the full pitcher roster from iScore."""
     if not ISCORE_LEAGUE_GUID:
-        # iScore not configured — use PS roster with iscore_guid aliased to playerlinkid
-        if not ps_df.empty:
-            ps_df = ps_df.copy()
-            ps_df["iscore_guid"] = ps_df["playerlinkid"].astype(str)
-        return ps_df
-
-    iscore_df = fetch_iscore_pitchers(ISCORE_LEAGUE_GUID)
-    if iscore_df.empty:
-        # iScore returned nothing — fall back to PS
-        if not ps_df.empty:
-            ps_df = ps_df.copy()
-            ps_df["iscore_guid"] = ps_df["playerlinkid"].astype(str)
-        return ps_df
-
-    return merge_iscore_with_ps(iscore_df, ps_df)
+        return pd.DataFrame()
+    return fetch_iscore_pitchers(ISCORE_LEAGUE_GUID)
 
 
 def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
@@ -471,7 +307,6 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
         data[0],
     )
 
-    # Response shape: stats.pitching.overall + stats.pitching.overall.RATES
     raw_stats = entry.get("stats") or {}
     pitching = raw_stats.get("pitching") or {}
     overall = pitching.get("overall") or {}
@@ -484,9 +319,6 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
     ip_full = int(outs) // 3
     ip_rem  = int(outs) % 3
     ip = float(f"{ip_full}.{ip_rem}") if ip_rem else float(ip_full)
-
-    fname = str(entry.get("firstName", "")).strip()
-    lname = str(entry.get("lastName", "")).strip()
 
     normalized: dict = {
         "name": ISCORE_SEASON_NAME,
@@ -510,13 +342,8 @@ def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
     """Fetch all pitch-by-pitch Trackman data for one pitcher (paginated)."""
     if not player_id:
         return None
-    if DATA_SOURCE == "sample":
-        return load_sample_pitches(player_id)
 
     url = f"{ALPB_BASE_URL}/pitches"
-
-    # `/pitches` pagination metadata is inconsistent across API versions.
-    # Pull sequentially until an empty page to avoid silent truncation.
     all_data: list[dict] = []
     page = 1
     while True:
@@ -535,14 +362,6 @@ def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
 #  Internal helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _find_season(parsed: dict, season_id: str) -> dict | None:
-    """Locate the season dict matching *season_id* inside the league JSON."""
-    for s in parsed["league"]["season"]:
-        if str(s["seasonid"]) == str(season_id):
-            return s
-    return None
-
-
 def _safe_str(value) -> str:
     """Coerce any value to a plain string (lists, None → ``""``/``str``)."""
     if value is None:
@@ -552,44 +371,8 @@ def _safe_str(value) -> str:
     return str(value)
 
 
-def _team_pitchers(team: dict, season_id: str) -> list[dict]:
-    """Fetch the pitchers on a single team's roster."""
-    tid = team["teamlinkid"]
-    tname = team["teamname"]
-    url = f"{POINTSTREAK_BASE_URL}/team/roster/{tid}/{season_id}/json"
-    try:
-        res = _ps_session.get(url)
-        if res.status_code != 200:
-            return []
-        players = res.json().get("league", {}).get("player")
-    except Exception:
-        return []
-    if not players:
-        return []
-    return [
-        {
-            "playerid":     _safe_str(p.get("playerid")),
-            "playerlinkid": _safe_str(p.get("playerlinkid")),
-            "fname":        _safe_str(p.get("fname")),
-            "lname":        _safe_str(p.get("lname")),
-            "position":     _safe_str(p.get("position")),
-            "height":       _safe_str(p.get("height")),
-            "weight":       _safe_str(p.get("weight")),
-            "birthday":     _safe_str(p.get("birthday")),
-            "bats":         _safe_str(p.get("bats")),
-            "throws":       _safe_str(p.get("throws")),
-            "hometown":     _safe_str(p.get("hometown")),
-            "photo":        _safe_str(p.get("photo")),
-            "teamlinkid":   tid,
-            "teamname":     tname,
-        }
-        for p in players
-        if _safe_str(p.get("position")) == "P"
-    ]
-
-
 def _fetch_alpb_page(url: str, player_id: str, page: int) -> list:
-    """Fetch one page of ALPB pitch data (used by the thread pool)."""
+    """Fetch one page of ALPB pitch data."""
     try:
         res = _alpb_session.get(url, params={"pitcher_id": player_id, "page": page})
         if res.status_code == 200:
