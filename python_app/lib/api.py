@@ -195,7 +195,7 @@ def fetch_iscore_teams(league_guid: str) -> list[dict]:
     """Fetch all teams in an iScore league."""
     url = f"{ISCORE_BASE_URL}/public/leagues/{league_guid}/teams"
     try:
-        res = _iscore_session.get(url, timeout=15)
+        res = _iscore_session.get(url, timeout=(5, 15))
         res.raise_for_status()
         return res.json() or []
     except Exception:
@@ -208,7 +208,7 @@ def _iscore_team_pitchers(team: dict) -> list[dict]:
     tname = team["name"]
     url = f"{ISCORE_BASE_URL}/public/teams/{tid}/players"
     try:
-        res = _iscore_session.get(url, timeout=15)
+        res = _iscore_session.get(url, timeout=(5, 15))
         if res.status_code != 200:
             return []
         players = res.json()
@@ -292,7 +292,7 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
     if ISCORE_SEASON_GUID:
         params["seasonId"] = ISCORE_SEASON_GUID
     try:
-        res = _iscore_session.get(url, params=params, timeout=15)
+        res = _iscore_session.get(url, params=params, timeout=(5, 15))
         if res.status_code != 200:
             return None
         data = res.json()
