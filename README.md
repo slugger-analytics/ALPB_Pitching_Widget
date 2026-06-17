@@ -1,3 +1,12 @@
+---
+title: ALPB Pitching Widget
+emoji: ⚾
+colorFrom: blue
+colorTo: red
+sdk: docker
+app_port: 7860
+---
+
 # SLUGGER Pitching Widget
 
 `SLUGGER Pitching Widget` is a Dash web application for reviewing ALPB pitcher performance from roster metadata, season-level stats, and pitch-by-pitch Trackman-style visualizations. The project was built to give coaches, analysts, and students a fast way to move from raw baseball data to a usable scouting dashboard and PDF handout.
