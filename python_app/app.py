@@ -58,6 +58,7 @@ threading.Thread(target=_load_roster_bg, daemon=True).start()
 # ── Dash app ─────────────────────────────────────────────────────────────────
 app = Dash(
     __name__,
+    url_base_pathname=os.getenv("DASH_URL_BASE_PATHNAME", "/"),
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
 )
