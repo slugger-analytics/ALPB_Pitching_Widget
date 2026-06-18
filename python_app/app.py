@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import traceback
 
 # Ensure the project root is on sys.path so ``python -m python_app.app``
@@ -36,13 +37,23 @@ from python_app.features import (  # noqa: F401
     season_stats,
 )
 
-# ── Bootstrap the data cache ─────────────────────────────────────────────────
-print("Loading pitcher roster...")
-try:
-    cache.load_roster()
-except Exception:
-    print("Failed to load roster at startup. App will boot with empty data.")
-    traceback.print_exc()
+# ── Bootstrap the data cache (non-blocking) ──────────────────────────────────
+# Load the roster in a background thread so the web worker starts serving
+# immediately. Loading synchronously here blocks gunicorn's worker from binding,
+# so the host never becomes reachable. The team/pitcher dropdowns are filled in
+# by `refresh_team_options` + `update_player_dropdown` once the load finishes
+# (driven by the "roster-refresh" Interval in the layout).
+def _load_roster_bg() -> None:
+    print("Loading pitcher roster (background)...")
+    try:
+        cache.load_roster()
+        print("Pitcher roster loaded.")
+    except Exception:
+        print("Failed to load roster; serving with empty data until it retries.")
+        traceback.print_exc()
+
+
+threading.Thread(target=_load_roster_bg, daemon=True).start()
 
 # ── Dash app ─────────────────────────────────────────────────────────────────
 app = Dash(
@@ -88,13 +99,11 @@ def _build_player_options(team_name: str | None) -> list[dict[str, str]]:
     return options
 
 
-_TEAM_OPTIONS = [{"label": "All Teams", "value": _ALL_TEAMS}] + [
-    {"label": team, "value": team} for team in cache.team_names
-]
-_INITIAL_PLAYER_OPTIONS = _build_player_options(_ALL_TEAMS)
-_INITIAL_PLAYER_VALUE = (
-    _INITIAL_PLAYER_OPTIONS[0]["value"] if _INITIAL_PLAYER_OPTIONS else None
-)
+# Built at import, before the background roster load finishes, so start with
+# just "All Teams"; `refresh_team_options` adds the teams once data is ready.
+_TEAM_OPTIONS = [{"label": "All Teams", "value": _ALL_TEAMS}]
+_INITIAL_PLAYER_OPTIONS: list[dict[str, str]] = []
+_INITIAL_PLAYER_VALUE = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -293,6 +302,10 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
     # Hidden stores (data plumbing between features)
     dcc.Store(id="alpb-player-id-store"),
     dcc.Store(id="pitch-data-store"),
+
+    # Polls the cache after startup until the background roster load finishes,
+    # then disables itself (see refresh_team_options / stop_roster_polling).
+    dcc.Interval(id="roster-refresh", interval=2000, n_intervals=0, disabled=False),
 ])
 
 
@@ -307,16 +320,38 @@ def lookup_alpb_id(iscore_guid: str | None):
 
 
 @callback(
+    Output("selected-team", "options"),
+    Input("roster-refresh", "n_intervals"),
+)
+def refresh_team_options(_n_intervals: int):
+    """Fill the team dropdown once the background roster load completes."""
+    return [{"label": "All Teams", "value": _ALL_TEAMS}] + [
+        {"label": team, "value": team} for team in cache.team_names
+    ]
+
+
+@callback(
+    Output("roster-refresh", "disabled"),
+    Input("selected-team", "options"),
+)
+def stop_roster_polling(team_options: list[dict[str, str]] | None):
+    """Stop polling once real teams (beyond 'All Teams') have loaded."""
+    return bool(team_options) and len(team_options) > 1
+
+
+@callback(
     Output("selected-player", "options"),
     Output("selected-player", "value"),
     Input("selected-team", "value"),
+    Input("roster-refresh", "n_intervals"),
     State("selected-player", "value"),
 )
 def update_player_dropdown(
     selected_team: str | None,
+    _n_intervals: int,
     current_iscore_guid: str | None,
 ):
-    """Filter player options by team and keep current selection when valid."""
+    """Filter player options by team; also refresh as the roster streams in."""
     options = _build_player_options(selected_team)
     valid_values = {opt["value"] for opt in options}
     if current_iscore_guid in valid_values:
