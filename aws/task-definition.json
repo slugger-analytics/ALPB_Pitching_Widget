@@ -1,0 +1,82 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "slugger-pitching",
+      "image": "746669223415.dkr.ecr.us-east-2.amazonaws.com/widget-pitching:latest",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 7860,
+          "hostPort": 7860,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "ISCORE_BASE_URL",
+          "value": "https://api.microservices.iscoresports.com/api"
+        },
+        {
+          "name": "DASH_URL_BASE_PATHNAME",
+          "value": "/widgets/pitching/"
+        },
+        {
+          "name": "ISCORE_SEASON_GUID",
+          "value": "9843025b-3dd7-4b1b-8776-a6b53a3bdb7a"
+        },
+        {
+          "name": "ISCORE_LEAGUE_GUID",
+          "value": "df9fb9cc-0fdb-4b79-8a3c-ad5d7b415a56"
+        },
+        {
+          "name": "DEFAULT_SEASON_ID",
+          "value": "34102"
+        },
+        {
+          "name": "ALPB_BASE_URL",
+          "value": "https://1ywv9dczq5.execute-api.us-east-2.amazonaws.com/ALPBAPI"
+        },
+        {
+          "name": "DATA_SOURCE",
+          "value": "live"
+        },
+        {
+          "name": "DASH_DEBUG",
+          "value": "false"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "ALPB_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:746669223415:parameter/slugger/pitching/alpb-api-key"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/slugger-pitching",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "slugger-pitching",
+  "executionRoleArn": "arn:aws:iam::746669223415:role/slugger-ecs-execution",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024"
+}
