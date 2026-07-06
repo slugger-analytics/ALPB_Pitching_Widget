@@ -111,9 +111,6 @@ class DataCache:
                 combined = None
 
         if combined is not None:
-            for col in ("gp", "w", "l"):
-                if col not in combined.columns:
-                    combined[col] = "-"
             col_order = ["name", "teamname", "gp", "gs", "w", "l", "era", "er", "h", "bb", "so", "ip", "sv"]
             ordered = [c for c in col_order if c in combined.columns]
             combined = combined[ordered].rename(columns={"name": "season"})

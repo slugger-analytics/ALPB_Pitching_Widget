@@ -322,7 +322,10 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
 
     normalized: dict = {
         "name": ISCORE_SEASON_NAME,
+        "gp":   overall.get("GP"),
         "gs":   overall.get("GS"),
+        "w":    overall.get("W"),
+        "l":    overall.get("L"),
         "sv":   overall.get("SV"),
         "er":   overall.get("ER"),
         "h":    overall.get("H"),
@@ -332,7 +335,7 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
         "era":  rates.get("ERA"),
     }
 
-    stat_order = ["name", "teamname", "gs", "era", "er", "h", "bb", "so", "ip", "sv"]
+    stat_order = ["name", "teamname", "gp", "gs", "w", "l", "era", "er", "h", "bb", "so", "ip", "sv"]
     df = pd.DataFrame([normalized])
     cols = [c for c in stat_order if c in df.columns]
     return df[cols] if cols else df
