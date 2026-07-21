@@ -32,6 +32,12 @@ _iscore_session = requests.Session()  # no auth required
 
 _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
+# Known first-name misspellings in iScore that differ from ALPB Trackman
+_FIRST_NAME_CORRECTIONS: dict[str, str] = {
+    "fransisco": "Francisco",
+    "issac":     "Isaac",
+}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ALPB Trackman
@@ -70,6 +76,14 @@ def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
     last_no_suffix = _strip_suffix_raw(last)
     last_no_suffix_ascii = _ascii_fold(last_no_suffix)
 
+    # Strip dots for initial-style names: "J.C." → "JC", "J.P." → "JP"
+    first_nodots = first.replace(".", "").strip()
+    first_nodots_ascii = _ascii_fold(first_nodots)
+
+    # Apply known iScore first-name misspellings
+    corrected_first = _FIRST_NAME_CORRECTIONS.get(first.lower(), first)
+    corrected_first_ascii = _ascii_fold(corrected_first)
+
     queries: list[str] = []
     seen: set[str] = set()
 
@@ -90,6 +104,22 @@ def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
     if last_no_suffix_ascii:
         _add(f"{last_no_suffix_ascii}, {first_ascii}")
 
+    # Dots-stripped variant (J.C. → JC; also catches ALPB storing "JC" vs "J.C.")
+    if first_nodots != first:
+        _add(f"{last_ascii}, {first_nodots_ascii}")
+
+    # First-initial only (JP → "J." finds "J.P.", "J.P", etc.)
+    if first_nodots:
+        _add(f"{last_ascii}, {first_nodots[0]}.")
+
+    # Corrected spelling variant
+    if corrected_first != first:
+        _add(f"{last_ascii}, {corrected_first_ascii}")
+
+    # Last-name-only fallback: safe when exactly one pitcher has that surname
+    # (e.g. ALPB stores "Tommy Kane" but iScore says "Thomas Kane")
+    _add(last_ascii)
+
     return queries
 
 
@@ -107,6 +137,23 @@ def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict |
         first_norm = _normalize_name(first_name).split(" ")[0]
         last_norm = _strip_suffix_norm(_normalize_name(last_name))
         if first_norm == target_first and last_norm == target_last:
+            return player
+
+    # Fuzzy initial match: last names match and both first names share the same
+    # leading letter and are short enough to be initials (e.g. "jp" ↔ "j p")
+    for player in pitchers:
+        first_name, last_name = _player_name_parts(player)
+        first_norm = _normalize_name(first_name).replace(" ", "")
+        last_norm = _strip_suffix_norm(_normalize_name(last_name))
+        target_first_nodot = target_first.replace(" ", "")
+        if (
+            last_norm == target_last
+            and first_norm
+            and target_first_nodot
+            and first_norm[0] == target_first_nodot[0]
+            and len(first_norm) <= 4
+            and len(target_first_nodot) <= 4
+        ):
             return player
 
     if len(pitchers) == 1:
