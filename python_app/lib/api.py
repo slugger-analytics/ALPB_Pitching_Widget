@@ -288,11 +288,8 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
     if not player_guid:
         return None
     url = f"{ISCORE_BASE_URL}/player-stats"
-    params: dict = {"playerId": player_guid}
-    if ISCORE_SEASON_GUID:
-        params["seasonId"] = ISCORE_SEASON_GUID
     try:
-        res = _iscore_session.get(url, params=params, timeout=(5, 15))
+        res = _iscore_session.get(url, params={"playerId": player_guid}, timeout=(5, 15))
         if res.status_code != 200:
             return None
         data = res.json()
@@ -307,8 +304,13 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
         data[0],
     )
 
+    # Stats are now keyed by season GUID: stats[seasonGuid].pitching.overall
     raw_stats = entry.get("stats") or {}
-    pitching = raw_stats.get("pitching") or {}
+    season_stats = raw_stats.get(ISCORE_SEASON_GUID) or {} if ISCORE_SEASON_GUID else {}
+    if not season_stats:
+        # Fall back to first available season if configured GUID not found
+        season_stats = next(iter(raw_stats.values()), {}) if raw_stats else {}
+    pitching = season_stats.get("pitching") or {}
     overall = pitching.get("overall") or {}
     rates = overall.get("RATES") or {}
 
