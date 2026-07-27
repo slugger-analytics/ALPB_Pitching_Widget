@@ -35,7 +35,7 @@ from PIL import Image
 
 from dash import Input, Output, State, callback, ctx, dcc, no_update
 
-from python_app.config import TABLE_HEADER_COLOR
+from python_app.config import HIGHLIGHT_BG, HIGHLIGHT_TEXT, TABLE_HEADER_COLOR
 from python_app.features.heatmaps import (
     HEATMAP_LH_TITLE,
     HEATMAP_RH_TITLE,
@@ -54,7 +54,7 @@ _RED:   str = "#C8102E"
 _LGRAY: str = "#f5f6fa"
 _MGRAY: str = "#dcdde1"
 _BORDER: str = "#c8c9cc"
-_HILITE: str = "#E6EEF9"
+_HILITE: str = HIGHLIGHT_BG               # row-max highlight — matches the web table
 
 # Scatter-plot column pairs shown in the PDF (x, y) — 2 charts
 _SCATTER_PAIRS: list[tuple[str, str]] = [
@@ -364,7 +364,9 @@ def _render_table(
                     continue
                 cell = tbl[(row_idx + 1, col_idx)]
                 cell.set_facecolor(_HILITE)
-                cell.set_text_props(color=_NAVY, fontweight="bold", fontsize=fontsize)
+                cell.set_text_props(
+                    color=HIGHLIGHT_TEXT, fontweight="bold", fontsize=fontsize,
+                )
 
 
 def _draw_bordered_rect(

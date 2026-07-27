@@ -14,6 +14,8 @@ import pandas as pd
 from dash import dash_table, html
 
 from python_app.config import (
+    HIGHLIGHT_BG,
+    HIGHLIGHT_TEXT,
     TABLE_STYLE_CELL,
     TABLE_STYLE_DATA_CONDITIONAL,
     TABLE_STYLE_HEADER,
@@ -69,8 +71,8 @@ def _row_max_highlight_rules(
             rules.append(
                 {
                     "if": {"row_index": row_idx, "column_id": col},
-                    "backgroundColor": "#E6EEF9",
-                    "color": "#002D72",
+                    "backgroundColor": HIGHLIGHT_BG,
+                    "color": HIGHLIGHT_TEXT,
                     "fontWeight": "bold",
                 }
             )

@@ -63,6 +63,12 @@ BRAND_MID_GRAY:   str = "#dcdde1"
 # Legacy alias used by existing code
 TABLE_HEADER_COLOR: str = BRAND_NAVY
 
+# Row-max highlight (pitch-usage table) — a bold navy fill with white text so the
+# most-thrown pitch per count is unmistakable. Shared by the Dash web table and
+# the matplotlib PDF export so both render identically.
+HIGHLIGHT_BG:   str = BRAND_NAVY   # "#002D72"
+HIGHLIGHT_TEXT: str = "#FFFFFF"
+
 # ── Pitch-type colours (shared by Plotly graphs and matplotlib PDF) ──────────
 PITCH_COLORS: dict[str, str] = {
     "Fastball":   "red",
