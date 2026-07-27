@@ -1,7 +1,7 @@
 """
 Strike-zone heatmaps.
 
-Layout   : two cards — pitch density vs RHB and vs LHB.
+Layout   : two cards — heat map vs RHB and vs LHB.
 Callback : re-renders when pitch data, tag method, or pitch-type filter changes.
 Builder  : ``build_heatmap`` is the single source of truth — also importable by
            other modules (e.g. future multi-page PDF heatmap sheets).
@@ -18,6 +18,11 @@ from dash import Input, Output, callback, dcc
 
 from python_app.lib.styles import info_card
 
+# Card / section titles — shared with the PDF export (pdf_export imports these)
+# so the web UI and the PDF report always read identically.
+HEATMAP_RH_TITLE = "Heat Map vs. RH Batters"
+HEATMAP_LH_TITLE = "Heat Map vs. LH Batters"
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Layout fragments
@@ -25,12 +30,12 @@ from python_app.lib.styles import info_card
 
 def layout_right():
     """Card for the RHB heatmap."""
-    return info_card("Pitch map vs RH Batters", dcc.Graph(id="heatmap-right"))
+    return info_card(HEATMAP_RH_TITLE, dcc.Graph(id="heatmap-right"))
 
 
 def layout_left():
     """Card for the LHB heatmap."""
-    return info_card("Pitch map vs LH Batters", dcc.Graph(id="heatmap-left"))
+    return info_card(HEATMAP_LH_TITLE, dcc.Graph(id="heatmap-left"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

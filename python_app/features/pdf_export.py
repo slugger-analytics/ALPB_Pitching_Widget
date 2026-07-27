@@ -36,7 +36,11 @@ from PIL import Image
 from dash import Input, Output, State, callback, ctx, dcc, no_update
 
 from python_app.config import TABLE_HEADER_COLOR
-from python_app.features.heatmaps import build_heatmap
+from python_app.features.heatmaps import (
+    HEATMAP_LH_TITLE,
+    HEATMAP_RH_TITLE,
+    build_heatmap,
+)
 from python_app.features.pitch_split import compute_pitch_split
 from python_app.features.scatter_plots import build_scatter
 from python_app.lib.cache import cache
@@ -65,8 +69,8 @@ _SCATTER_TITLES: list[str] = [
 ]
 
 _HEATMAP_TITLES: list[str] = [
-    "Pitch map vs RH Batters",
-    "Pitch map vs LH Batters",
+    HEATMAP_RH_TITLE,
+    HEATMAP_LH_TITLE,
 ]
 _ALL_TEAMS = "__ALL_TEAMS__"
 
