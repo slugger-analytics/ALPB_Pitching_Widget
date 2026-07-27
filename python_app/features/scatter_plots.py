@@ -68,13 +68,16 @@ def build_scatter(
         return go.Figure()
 
     plot_df = df.copy()
-    plot_df["_tag"] = (
-        plot_df[tag].apply(
-            lambda v: "Untagged" if pd.isna(v) or v == "Undefined" else str(v)
-        )
-        if tag in plot_df.columns
-        else "Untagged"
-    )
+    if tag in plot_df.columns:
+        plot_df = plot_df[
+            plot_df[tag].notna() & (plot_df[tag] != "Undefined")
+        ]
+        plot_df["_tag"] = plot_df[tag].astype(str)
+    else:
+        return go.Figure()
+
+    if plot_df.empty:
+        return go.Figure()
 
     fig = go.Figure()
     for ptype in sorted(plot_df["_tag"].unique()):

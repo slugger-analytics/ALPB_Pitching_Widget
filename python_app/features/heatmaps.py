@@ -138,6 +138,8 @@ def _filter_by_side(
         return pd.DataFrame()
     df = pd.DataFrame(pitch_records)
     df = df[df["batter_side"] == batter_side]
+    if tag in df.columns:
+        df = df[df[tag].notna() & (df[tag] != "Undefined")]
     if pitch_type and pitch_type != "All" and tag in df.columns:
         df = df[df[tag] == pitch_type]
     return df
