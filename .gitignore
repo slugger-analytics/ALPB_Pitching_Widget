@@ -1,6 +1,8 @@
 .env
 .env.local
 .venv/
+.venv-test/
+.venv-verify/
 __pycache__/
 *.py[cod]
 *.log
