@@ -163,7 +163,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                             style={"fontSize": "0.92rem"},
                         ),
                     ]),
-                    width=3,
+                    xs=12, md=3,
                 ),
                 dbc.Col(
                     html.Div([
@@ -177,9 +177,9 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                             style={"fontSize": "0.92rem"},
                         ),
                     ]),
-                    width=4,
+                    xs=12, md=4,
                 ),
-                dbc.Col(width=1),
+                dbc.Col(xs=12, md=1, className="d-none d-md-block"),
                 dbc.Col(
                     html.Div(className="d-grid gap-2", children=[
                         html.Button(
@@ -193,7 +193,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                             className="btn btn-brand-outline w-100",
                         ),
                     ]),
-                    width=4,
+                    xs=12,
+                    md=4,
                     className="d-flex align-items-center",
                 ),
             ], className="align-items-center"),
@@ -207,8 +208,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
         # ── Section 1: Pitcher Info + Season Stats ────────────────────
         section_label("Pitcher Information & Season Stats"),
         dbc.Row([
-            dbc.Col(player_info.layout(), width=3),
-            dbc.Col(season_stats.layout(), width=9),
+            dbc.Col(player_info.layout(), xs=12, md=3),
+            dbc.Col(season_stats.layout(), xs=12, md=9),
         ], className="gx-3 mb-3"),
 
         # ── ALPB Trackman sections (hidden when no ALPB data) ─────────
@@ -217,8 +218,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
             # Section 2: Pitch Movement (scatter plots)
             section_label("Pitch Movement"),
             dbc.Row([
-                dbc.Col(scatter_plots.layout_vel(), width=6),
-                dbc.Col(scatter_plots.layout_break(), width=6),
+                dbc.Col(scatter_plots.layout_vel(), xs=12, md=6),
+                dbc.Col(scatter_plots.layout_break(), xs=12, md=6),
             ], className="gx-3 mb-3"),
 
             # Controls strip
@@ -241,7 +242,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                     "marginBottom": "3px",
                                 },
                             ),
-                        ], width=4),
+                        ], xs=12, md=4),
                         dbc.Col([
                             html.Label(
                                 "Pitch Tagging Method:",
@@ -261,7 +262,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                     "marginBottom": "3px",
                                 },
                             ),
-                        ], width=4),
+                        ], xs=12, md=4),
                         dbc.Col([
                             html.Label(
                                 "Select Pitch Type:",
@@ -273,22 +274,23 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                 value="All",
                                 style={"fontSize": "0.88rem"},
                             ),
-                        ], width=4),
+                        ], xs=12, md=4),
                     ], className="align-items-start"),
                 ]),
+                xs=12,
             ), className="mb-3"),
 
             # Section 3: Pitch Heatmaps
             section_label("Pitch Heatmaps"),
             dbc.Row([
-                dbc.Col(heatmaps.layout_right(), width=6),
-                dbc.Col(heatmaps.layout_left(), width=6),
+                dbc.Col(heatmaps.layout_right(), xs=12, md=6),
+                dbc.Col(heatmaps.layout_left(), xs=12, md=6),
             ], className="gx-3 mb-3"),
 
             # Section 4: Pitch Usage by Count
             section_label("Pitch Usage by Count"),
             dbc.Row(
-                dbc.Col(pitch_split.layout(), width=12),
+                dbc.Col(pitch_split.layout(), xs=12),
                 className="mb-3",
             ),
         ]),

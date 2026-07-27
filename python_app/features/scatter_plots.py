@@ -24,14 +24,17 @@ from python_app.lib.styles import info_card
 
 def layout_vel() -> info_card:
     """Card wrapping the velocity scatter plot."""
-    return info_card("Vertical/Horizontal Break vs Velocity", dcc.Graph(id="vel-plot"))
+    return info_card(
+        "Vertical/Horizontal Break vs Velocity",
+        dcc.Graph(id="vel-plot", config={"responsive": True}, style={"width": "100%"}),
+    )
 
 
 def layout_break() -> info_card:
     """Card wrapping the break scatter plot."""
     return info_card(
         "Induced Vertical Break vs Horizontal Break",
-        dcc.Graph(id="break-plot"),
+        dcc.Graph(id="break-plot", config={"responsive": True}, style={"width": "100%"}),
     )
 
 
@@ -93,6 +96,7 @@ def build_scatter(
         yaxis_title=AXIS_LABELS.get(y_axis, y_axis),
         template="plotly_white",
         legend_title="Pitch Type",
+        legend=dict(orientation="h", yanchor="top", y=-0.25),
         margin=dict(l=50, r=20, t=30, b=50),
         height=300,
     )

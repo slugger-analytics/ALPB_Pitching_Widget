@@ -230,4 +230,10 @@ body {
     .brand-banner h1 { font-size: 1.2rem; }
     .section-label   { font-size: 0.75rem; }
     .controls-panel  { padding: 10px 12px; }
+
+    /* Tighter side gutters reclaim width for the stacked charts. */
+    .content-wrapper { padding: 0 10px 16px; }
+
+    /* Space out cards once they stack into a single column. */
+    .card-navy       { margin-bottom: 12px; }
 }

@@ -30,12 +30,18 @@ HEATMAP_LH_TITLE = "Heat Map vs. LH Batters"
 
 def layout_right():
     """Card for the RHB heatmap."""
-    return info_card(HEATMAP_RH_TITLE, dcc.Graph(id="heatmap-right"))
+    return info_card(
+        HEATMAP_RH_TITLE,
+        dcc.Graph(id="heatmap-right", config={"responsive": True}, style={"width": "100%"}),
+    )
 
 
 def layout_left():
     """Card for the LHB heatmap."""
-    return info_card(HEATMAP_LH_TITLE, dcc.Graph(id="heatmap-left"))
+    return info_card(
+        HEATMAP_LH_TITLE,
+        dcc.Graph(id="heatmap-left", config={"responsive": True}, style={"width": "100%"}),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
