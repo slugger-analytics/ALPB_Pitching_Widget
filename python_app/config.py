@@ -124,3 +124,10 @@ ISCORE_SEASON_NAME = os.getenv("ISCORE_SEASON_NAME", "ALPB 2026")
 
 # ── Parallel-fetch settings ──────────────────────────────────────────────────
 MAX_WORKERS: int = 8
+
+# ── Cache refresh TTLs ───────────────────────────────────────────────────────
+# The Fargate container is long-lived (days), so the roster and negative ALPB-id
+# lookups expire and refresh in place — newly signed pitchers must surface
+# without a container restart. Both are env-overridable for tuning.
+ROSTER_TTL_SECONDS: int = int(os.getenv("ROSTER_TTL_SECONDS", "900"))
+NEGATIVE_ID_TTL_SECONDS: int = int(os.getenv("NEGATIVE_ID_TTL_SECONDS", "1800"))

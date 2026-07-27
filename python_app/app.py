@@ -37,17 +37,30 @@ from python_app.features import (  # noqa: F401
     season_stats,
 )
 
+# Roster-refresh Interval cadence (ms): poll fast until the roster first loads,
+# then slow to a periodic refresh so newly signed pitchers surface over time
+# without a container restart.
+ROSTER_REFRESH_FAST_MS = 2000
+ROSTER_REFRESH_SLOW_MS = 300_000
+
+
 # ── Bootstrap the data cache (non-blocking) ──────────────────────────────────
 # Load the roster in a background thread so the web worker starts serving
 # immediately. Loading synchronously here blocks gunicorn's worker from binding,
 # so the host never becomes reachable. The team/pitcher dropdowns are filled in
 # by `refresh_team_options` + `update_player_dropdown` once the load finishes
-# (driven by the "roster-refresh" Interval in the layout).
+# (driven by the "roster-refresh" Interval in the layout). The same helper is
+# re-spawned periodically to pick up newly signed pitchers.
 def _load_roster_bg() -> None:
     print("Loading pitcher roster (background)...")
     try:
-        cache.load_roster()
-        print("Pitcher roster loaded.")
+        refreshed = cache.refresh_roster_if_stale()
+        if not refreshed:
+            return  # another thread already handled it, or roster still fresh
+        if not cache.pitchers_df.empty:
+            print("Pitcher roster loaded.")
+        else:
+            print("Roster still empty; will retry on the next refresh tick.")
     except Exception:
         print("Failed to load roster; serving with empty data until it retries.")
         traceback.print_exc()
@@ -306,9 +319,15 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
     dcc.Store(id="alpb-player-id-store"),
     dcc.Store(id="pitch-data-store"),
 
-    # Polls the cache after startup until the background roster load finishes,
-    # then disables itself (see refresh_team_options / stop_roster_polling).
-    dcc.Interval(id="roster-refresh", interval=2000, n_intervals=0, disabled=False),
+    # Polls the cache fast at startup until the roster first loads, then slows
+    # to a periodic refresh (never disabled) so newly signed pitchers appear
+    # without a container restart (see refresh_team_options / slow_roster_polling).
+    dcc.Interval(
+        id="roster-refresh",
+        interval=ROSTER_REFRESH_FAST_MS,
+        n_intervals=0,
+        disabled=False,
+    ),
 ])
 
 
@@ -327,19 +346,26 @@ def lookup_alpb_id(iscore_guid: str | None):
     Input("roster-refresh", "n_intervals"),
 )
 def refresh_team_options(_n_intervals: int):
-    """Fill the team dropdown once the background roster load completes."""
+    """Fill the team dropdown, and kick off a non-blocking background roster
+    refresh whenever the roster has gone stale so newly signed pitchers appear
+    without a container restart."""
+    if cache.roster_is_stale():
+        threading.Thread(target=_load_roster_bg, daemon=True).start()
     return [{"label": "All Teams", "value": _ALL_TEAMS}] + [
         {"label": team, "value": team} for team in cache.team_names
     ]
 
 
 @callback(
-    Output("roster-refresh", "disabled"),
+    Output("roster-refresh", "interval"),
     Input("selected-team", "options"),
 )
-def stop_roster_polling(team_options: list[dict[str, str]] | None):
-    """Stop polling once real teams (beyond 'All Teams') have loaded."""
-    return bool(team_options) and len(team_options) > 1
+def slow_roster_polling(team_options: list[dict[str, str]] | None):
+    """Once real teams (beyond 'All Teams') have loaded, slow the roster-refresh
+    Interval from the fast startup poll to a periodic cadence. The Interval is
+    never disabled — it keeps refreshing the roster on a schedule."""
+    loaded = bool(team_options) and len(team_options) > 1
+    return ROSTER_REFRESH_SLOW_MS if loaded else ROSTER_REFRESH_FAST_MS
 
 
 @callback(

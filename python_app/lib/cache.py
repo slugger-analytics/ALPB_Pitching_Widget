@@ -8,8 +8,12 @@ transparent, in-memory caching.  Feature modules should import from here
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pandas as pd
 
+from python_app.config import NEGATIVE_ID_TTL_SECONDS, ROSTER_TTL_SECONDS
 from python_app.lib.api import (
     fetch_all_pitchers_combined,
     fetch_alpb_pitcher_info,
@@ -23,15 +27,59 @@ class DataCache:
 
     def __init__(self) -> None:
         self._pitchers_df: pd.DataFrame = pd.DataFrame()
-        self._alpb_ids: dict[str, str | None] = {}
+        self._roster_loaded_at: float | None = None
+        # Each entry is (player_id_or_None, cached_at_monotonic). Positive ids
+        # persist; negative (None) entries expire after NEGATIVE_ID_TTL_SECONDS.
+        self._alpb_ids: dict[str, tuple[str | None, float]] = {}
         self._pitch_data: dict[str, list[dict] | None] = {}
         self._season_stats: dict[str, pd.DataFrame | None] = {}
+        self._roster_lock = threading.Lock()
+        self._roster_refreshing = False
 
     # ── Roster ────────────────────────────────────────────────────────────
 
     def load_roster(self) -> None:
-        """Fetch and cache the full league roster from iScore."""
-        self._pitchers_df = fetch_all_pitchers_combined()
+        """Fetch the full league roster from iScore and atomically swap it in.
+
+        The new DataFrame is built fully, then the served roster is replaced in a
+        single assignment. On any fetch failure (exception or empty result) the
+        previous roster is kept — a transient API blip must never serve an empty
+        roster to users.
+        """
+        try:
+            new_df = fetch_all_pitchers_combined()
+        except Exception:
+            return  # transient failure — keep the previous roster
+        if new_df is None or new_df.empty:
+            return  # never serve empty on a transient/empty fetch
+        self._pitchers_df = new_df            # atomic swap (single assignment)
+        self._roster_loaded_at = time.monotonic()
+
+    def roster_is_stale(self) -> bool:
+        """True when the roster has never loaded or has aged past its TTL."""
+        if self._roster_loaded_at is None:
+            return True
+        return (time.monotonic() - self._roster_loaded_at) >= ROSTER_TTL_SECONDS
+
+    def refresh_roster_if_stale(self) -> bool:
+        """Reload the roster if it is stale and no refresh is already in flight.
+
+        Returns True if this call performed the (re)load, False if it was skipped
+        because the roster is still fresh or another thread is already
+        refreshing (the lock/in-flight flag stops overlapping refetches).
+        """
+        if not self.roster_is_stale():
+            return False
+        with self._roster_lock:
+            if self._roster_refreshing or not self.roster_is_stale():
+                return False
+            self._roster_refreshing = True
+        try:
+            self.load_roster()
+        finally:
+            with self._roster_lock:
+                self._roster_refreshing = False
+        return True
 
     @property
     def pitchers_df(self) -> pd.DataFrame:
@@ -129,20 +177,31 @@ class DataCache:
     # ── ALPB player ID ────────────────────────────────────────────────────
 
     def get_alpb_id(self, iscore_guid: str | None) -> str | None:
-        """Return the ALPB Trackman player ID for an iscore_guid."""
+        """Return the ALPB Trackman player ID for an iscore_guid.
+
+        Positive results are cached for the process lifetime; negative
+        (not-found) results expire after ``NEGATIVE_ID_TTL_SECONDS`` so a pitcher
+        who only later appears in the ALPB feed is eventually resolved.
+        """
         if not iscore_guid:
             return None
         key = str(iscore_guid)
-        if key in self._alpb_ids:
-            return self._alpb_ids[key]
+        cached = self._alpb_ids.get(key)
+        if cached is not None:
+            value, cached_at = cached
+            if value is not None:
+                return value  # positive entries persist
+            if (time.monotonic() - cached_at) < NEGATIVE_ID_TTL_SECONDS:
+                return None   # negative entry still within its TTL
+            # negative entry expired — fall through and retry the lookup
 
         player = self.get_player_by_guid(key)
         if player is None:
-            self._alpb_ids[key] = None
+            self._alpb_ids[key] = (None, time.monotonic())
             return None
         result = fetch_alpb_pitcher_info(player["fname"], player["lname"])
         pid = result["player_id"] if result else None
-        self._alpb_ids[key] = pid
+        self._alpb_ids[key] = (pid, time.monotonic())
         return pid
 
     # ── Pitch-by-pitch data ───────────────────────────────────────────────
