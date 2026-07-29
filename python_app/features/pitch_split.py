@@ -13,6 +13,8 @@ import pandas as pd
 
 from dash import Input, Output, callback, html
 
+from python_app.config import BATTER_SIDE_LABELS
+from python_app.lib.filters import filter_batter_side
 from python_app.lib.styles import info_card, styled_table
 
 
@@ -80,6 +82,18 @@ def compute_pitch_split(pitch_data: pd.DataFrame, tag: str) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  Internal helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _no_split_message(batter_side: str | None) -> str:
+    """Empty-state text, mentioning the batter side only when one is selected."""
+    label = BATTER_SIDE_LABELS.get(batter_side)
+    if label:
+        return f"No pitch split data available {label}."
+    return "No pitch split data available."
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Dash callback
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -87,16 +101,19 @@ def compute_pitch_split(pitch_data: pd.DataFrame, tag: str) -> pd.DataFrame:
     Output("pitch-table-container", "children"),
     Input("pitch-data-store", "data"),
     Input("tag-choice", "value"),
+    Input("batter-side", "value"),
 )
 def update_pitch_table(
     pitch_records: list[dict] | None,
     tag: str,
+    batter_side: str,
 ):
     if not pitch_records:
         return ""
-    split_df = compute_pitch_split(pd.DataFrame(pitch_records), tag)
+    df = filter_batter_side(pd.DataFrame(pitch_records), batter_side)
+    split_df = compute_pitch_split(df, tag)
     if split_df.empty:
-        return html.P("No pitch split data available.")
+        return html.P(_no_split_message(batter_side))
     return styled_table(
         split_df,
         page_size=12,

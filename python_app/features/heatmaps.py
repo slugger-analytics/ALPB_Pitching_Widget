@@ -16,6 +16,7 @@ from scipy.stats import gaussian_kde
 
 from dash import Input, Output, callback, dcc
 
+from python_app.lib.filters import filter_batter_side
 from python_app.lib.styles import info_card
 
 # Card / section titles — shared with the PDF export (pdf_export imports these)
@@ -133,11 +134,14 @@ def _filter_by_side(
     pitch_type: str | None,
     batter_side: str,
 ) -> pd.DataFrame:
-    """Subset pitch records for one batter side and (optionally) pitch type."""
+    """Subset pitch records for one batter side and (optionally) pitch type.
+
+    The side subset is delegated to the shared ``filter_batter_side`` so a
+    missing ``batter_side`` column yields an empty frame instead of a KeyError.
+    """
     if not pitch_records:
         return pd.DataFrame()
-    df = pd.DataFrame(pitch_records)
-    df = df[df["batter_side"] == batter_side]
+    df = filter_batter_side(pd.DataFrame(pitch_records), batter_side)
     if tag in df.columns:
         df = df[df[tag].notna() & (df[tag] != "Undefined")]
     if pitch_type and pitch_type != "All" and tag in df.columns:

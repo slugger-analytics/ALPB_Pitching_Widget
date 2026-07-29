@@ -44,6 +44,7 @@ from python_app.features.heatmaps import (
 from python_app.features.pitch_split import compute_pitch_split
 from python_app.features.scatter_plots import build_scatter
 from python_app.lib.cache import cache
+from python_app.lib.filters import filter_batter_side
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -109,6 +110,9 @@ def download_pdf(
     tag: str | None,
 ):
     """Generate and send either a player PDF or a team multi-page PDF."""
+    # The PDF deliberately renders All: like the pitch-type dropdown, the web
+    # batter side radio is intentionally not an input here, so the report always
+    # shows both RHB and LHB (per-side heatmaps stay split, movement/usage are All).
     try:
         pitch_tag = tag or "auto_pitch_type"
         triggered = ctx.triggered_id
@@ -468,8 +472,8 @@ def _append_player_page(
             scatter_images.append(_plotly_to_image(pfig, width=620, height=360))
             del pfig
 
-        rh_df = _filter_by_batter_side(filtered, "Right")
-        lh_df = _filter_by_batter_side(filtered, "Left")
+        rh_df = filter_batter_side(filtered, "Right")
+        lh_df = filter_batter_side(filtered, "Left")
         for side_df in [rh_df, lh_df]:
             hfig = build_heatmap(side_df)
             hfig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=250)
@@ -496,12 +500,6 @@ _HDR = 0.021          # navy card-header height
 _PAD = 0.005          # inner padding
 _LR  = 0.035          # left/right page margin
 _GAP = 0.012          # horizontal gap between cards
-
-
-def _filter_by_batter_side(df: pd.DataFrame, side: str) -> pd.DataFrame:
-    if "batter_side" not in df.columns:
-        return pd.DataFrame()
-    return df[df["batter_side"] == side]
 
 
 def _render_chart_card(

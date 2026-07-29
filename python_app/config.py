@@ -96,6 +96,12 @@ AXIS_SHORT_LABELS: dict[str, str] = {
     "rel_speed":          "Velocity",
 }
 
+# ── Batter-side filter ───────────────────────────────────────────────────────
+# "All" is the pass-through sentinel; the labels map concrete sides to the
+# short "vs RHB" / "vs LHB" text shown in the UI radio and empty-state messages.
+BATTER_SIDE_ALL: str = "All"
+BATTER_SIDE_LABELS: dict[str, str] = {"Right": "vs RHB", "Left": "vs LHB"}
+
 # ── Dash DataTable styling ───────────────────────────────────────────────────
 TABLE_STYLE_HEADER: dict = {
     "backgroundColor": BRAND_NAVY,

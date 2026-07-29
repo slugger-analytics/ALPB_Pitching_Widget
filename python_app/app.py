@@ -24,6 +24,7 @@ from dash import Dash, Input, Output, State, callback, dcc, html
 import dash_bootstrap_components as dbc
 import pandas as pd
 
+from python_app.config import BATTER_SIDE_ALL, BATTER_SIDE_LABELS
 from python_app.lib.cache import cache
 from python_app.lib.styles import section_label
 
@@ -255,7 +256,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                     "marginBottom": "3px",
                                 },
                             ),
-                        ], xs=12, md=4),
+                        ], xs=12, md=3),
                         dbc.Col([
                             html.Label(
                                 "Pitch Tagging Method:",
@@ -275,7 +276,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                     "marginBottom": "3px",
                                 },
                             ),
-                        ], xs=12, md=4),
+                        ], xs=12, md=3),
                         dbc.Col([
                             html.Label(
                                 "Select Pitch Type:",
@@ -287,7 +288,28 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                 value="All",
                                 style={"fontSize": "0.88rem"},
                             ),
-                        ], xs=12, md=4),
+                        ], xs=12, md=3),
+                        dbc.Col([
+                            html.Label(
+                                "Batter Side:",
+                                className="fw-bold mb-1",
+                            ),
+                            dcc.RadioItems(
+                                id="batter-side",
+                                options=[
+                                    {"label": " All", "value": BATTER_SIDE_ALL},
+                                    {"label": f" {BATTER_SIDE_LABELS['Right']}",
+                                     "value": "Right"},
+                                    {"label": f" {BATTER_SIDE_LABELS['Left']}",
+                                     "value": "Left"},
+                                ],
+                                value=BATTER_SIDE_ALL,
+                                labelStyle={
+                                    "display": "block",
+                                    "marginBottom": "3px",
+                                },
+                            ),
+                        ], xs=12, md=3),
                     ], className="align-items-start"),
                 ]),
                 xs=12,

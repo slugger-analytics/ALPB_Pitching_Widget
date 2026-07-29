@@ -14,7 +14,8 @@ import plotly.graph_objects as go
 
 from dash import Input, Output, callback, dcc
 
-from python_app.config import AXIS_LABELS, PITCH_COLORS
+from python_app.config import AXIS_LABELS, BATTER_SIDE_LABELS, PITCH_COLORS
+from python_app.lib.filters import filter_batter_side
 from python_app.lib.styles import info_card
 
 
@@ -107,6 +108,29 @@ def build_scatter(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  Internal helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _empty_side_figure(side: str) -> go.Figure:
+    """Placeholder scatter shown when a batter-side filter yields no pitches."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=f"No pitches {BATTER_SIDE_LABELS.get(side, side)}",
+        xref="paper", yref="paper", x=0.5, y=0.5,
+        showarrow=False,
+        font=dict(size=14, color="gray"),
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=300,
+        margin=dict(l=50, r=20, t=30, b=50),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+    )
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Dash callbacks
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -115,28 +139,36 @@ def build_scatter(
     Input("pitch-data-store", "data"),
     Input("break-type", "value"),
     Input("tag-choice", "value"),
+    Input("batter-side", "value"),
 )
 def update_vel_plot(
     pitch_records: list[dict] | None,
     break_type: str,
     tag: str,
+    batter_side: str,
 ) -> go.Figure:
     if not pitch_records:
         return go.Figure()
-    return build_scatter(pd.DataFrame(pitch_records), "rel_speed", break_type, tag)
+    df = filter_batter_side(pd.DataFrame(pitch_records), batter_side)
+    if df is None or df.empty:
+        return _empty_side_figure(batter_side)
+    return build_scatter(df, "rel_speed", break_type, tag)
 
 
 @callback(
     Output("break-plot", "figure"),
     Input("pitch-data-store", "data"),
     Input("tag-choice", "value"),
+    Input("batter-side", "value"),
 )
 def update_break_plot(
     pitch_records: list[dict] | None,
     tag: str,
+    batter_side: str,
 ) -> go.Figure:
     if not pitch_records:
         return go.Figure()
-    return build_scatter(
-        pd.DataFrame(pitch_records), "horz_break", "induced_vert_break", tag,
-    )
+    df = filter_batter_side(pd.DataFrame(pitch_records), batter_side)
+    if df is None or df.empty:
+        return _empty_side_figure(batter_side)
+    return build_scatter(df, "horz_break", "induced_vert_break", tag)
