@@ -48,7 +48,7 @@ def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
     url = f"{ALPB_BASE_URL}/players"
     for query in _alpb_query_candidates(fname, lname):
         try:
-            res = _alpb_session.get(url, params={"player_name": query})
+            res = _alpb_session.get(url, params={"player_name": query}, timeout=(5, 15))
             res.raise_for_status()
             data = res.json().get("data")
             if not isinstance(data, list) or not data:
@@ -426,7 +426,9 @@ def _safe_str(value) -> str:
 def _fetch_alpb_page(url: str, player_id: str, page: int) -> list:
     """Fetch one page of ALPB pitch data."""
     try:
-        res = _alpb_session.get(url, params={"pitcher_id": player_id, "page": page})
+        res = _alpb_session.get(
+            url, params={"pitcher_id": player_id, "page": page}, timeout=(5, 15)
+        )
         if res.status_code == 200:
             return res.json().get("data", [])
     except Exception:

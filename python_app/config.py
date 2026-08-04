@@ -137,3 +137,16 @@ MAX_WORKERS: int = 8
 # without a container restart. Both are env-overridable for tuning.
 ROSTER_TTL_SECONDS: int = int(os.getenv("ROSTER_TTL_SECONDS", "900"))
 NEGATIVE_ID_TTL_SECONDS: int = int(os.getenv("NEGATIVE_ID_TTL_SECONDS", "1800"))
+
+# Pitch-level and season-stat caches expire too, so a pitcher who was already
+# viewed still picks up the pitches he threw today. An empty pitch result
+# expires sooner than a populated one — re-testing it costs a single request,
+# while refetching a populated pitcher re-pages his whole season.
+PITCH_DATA_TTL_SECONDS: int = int(os.getenv("PITCH_DATA_TTL_SECONDS", "1800"))
+NEGATIVE_PITCH_DATA_TTL_SECONDS: int = int(os.getenv("NEGATIVE_PITCH_DATA_TTL_SECONDS", "300"))
+SEASON_STATS_TTL_SECONDS: int = int(os.getenv("SEASON_STATS_TTL_SECONDS", "1800"))
+
+# A failed refetch keeps serving the value already cached, but the entry is
+# restamped to expire again after this short backoff — otherwise every later
+# view would issue its own upstream request for as long as the API is degraded.
+REFETCH_BACKOFF_SECONDS: int = int(os.getenv("REFETCH_BACKOFF_SECONDS", "60"))

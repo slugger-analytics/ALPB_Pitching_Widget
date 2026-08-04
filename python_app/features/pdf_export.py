@@ -35,7 +35,12 @@ from PIL import Image
 
 from dash import Input, Output, State, callback, ctx, dcc, no_update
 
-from python_app.config import HIGHLIGHT_BG, HIGHLIGHT_TEXT, TABLE_HEADER_COLOR
+from python_app.config import (
+    BATTER_SIDE_LABELS,
+    HIGHLIGHT_BG,
+    HIGHLIGHT_TEXT,
+    TABLE_HEADER_COLOR,
+)
 from python_app.features.heatmaps import (
     HEATMAP_LH_TITLE,
     HEATMAP_RH_TITLE,
@@ -75,6 +80,11 @@ _HEATMAP_TITLES: list[str] = [
 ]
 _ALL_TEAMS = "__ALL_TEAMS__"
 
+# Batter-side stamp: BATTER_SIDE_LABELS covers "Right"/"Left"; the All /
+# None case is named explicitly so an exported report always states which
+# batters it covers.
+_ALL_BATTERS_LABEL: str = "All Batters"
+
 # ── Kaleido availability (checked once at import time) ────────────────────────
 _KALEIDO_OK: bool = False
 try:
@@ -99,6 +109,7 @@ except ImportError:
     State("selected-team", "value"),
     State("pitch-data-store", "data"),
     State("tag-choice", "value"),
+    State("batter-side", "value"),
     prevent_initial_call=True,
 )
 def download_pdf(
@@ -108,11 +119,13 @@ def download_pdf(
     selected_team: str | None,
     pitch_records: list[dict] | None,
     tag: str | None,
+    batter_side: str | None,
 ):
     """Generate and send either a player PDF or a team multi-page PDF."""
-    # The PDF deliberately renders All: like the pitch-type dropdown, the web
-    # batter side radio is intentionally not an input here, so the report always
-    # shows both RHB and LHB (per-side heatmaps stay split, movement/usage are All).
+    # The report follows the on-screen batter-side radio: movement + usage are
+    # filtered, the heatmaps stay split by side (they ARE the side split), and
+    # every filtered section is stamped so the file can never silently disagree
+    # with the screen.
     try:
         pitch_tag = tag or "auto_pitch_type"
         triggered = ctx.triggered_id
@@ -128,8 +141,13 @@ def download_pdf(
             stats = cache.get_season_stats(str(player["iscore_guid"]))
             pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
 
-            pdf_path = _generate_pdf(selected_name, player, stats, pitch_df, pitch_tag)
-            filename = f"{_safe_filename(selected_name)} Pitcher Report.pdf"
+            pdf_path = _generate_pdf(
+                selected_name, player, stats, pitch_df, pitch_tag, batter_side,
+            )
+            filename = (
+                f"{_safe_filename(selected_name)} Pitcher Report"
+                f"{_filename_side_suffix(batter_side)}.pdf"
+            )
             return dcc.send_file(pdf_path, filename=filename)
 
         if triggered == "download-team-pdf-btn":
@@ -139,8 +157,11 @@ def download_pdf(
             if team_players.empty:
                 return no_update
 
-            pdf_path = _generate_team_pdf(team_players, pitch_tag)
-            filename = f"{_safe_filename(selected_team)} Pitching Reports.pdf"
+            pdf_path = _generate_team_pdf(team_players, pitch_tag, batter_side)
+            filename = (
+                f"{_safe_filename(selected_team)} Pitching Reports"
+                f"{_filename_side_suffix(batter_side)}.pdf"
+            )
             return dcc.send_file(pdf_path, filename=filename)
 
         return no_update
@@ -153,6 +174,36 @@ def _safe_filename(raw: str) -> str:
     """Keep filenames readable and filesystem-safe."""
     cleaned = "".join(ch for ch in str(raw) if ch.isalnum() or ch in {" ", "_", "-"})
     return " ".join(cleaned.split()).strip() or "Report"
+
+
+def _side_label(batter_side: str | None) -> str:
+    """Display text for a batter-side selection ("vs LHB" / "All Batters")."""
+    return BATTER_SIDE_LABELS.get(batter_side, _ALL_BATTERS_LABEL)
+
+
+def _filename_side_suffix(batter_side: str | None) -> str:
+    """Filename tag so a side-filtered export never overwrites an All export."""
+    label = BATTER_SIDE_LABELS.get(batter_side)
+    return f" {label}" if label else ""
+
+
+def _chart_empty_text(
+    has_pitches: bool, rendered: bool, batter_side: str | None,
+) -> str:
+    """Empty-state text for a movement-chart card.
+
+    Distinguishes "the batter-side filter left no pitches" (no chart was even
+    built) from "kaleido could not convert the figure" so the report never
+    blames a missing library for an empty side.  The wording matches the web
+    placeholder in ``scatter_plots._empty_side_figure``.
+    """
+    if not has_pitches:
+        return "No pitch data"
+    if not rendered:
+        label = BATTER_SIDE_LABELS.get(batter_side)
+        if label:
+            return f"No pitches {label}"
+    return "Install kaleido to\nenable chart export"
 
 
 def _team_sorted(players: pd.DataFrame) -> pd.DataFrame:
@@ -231,7 +282,7 @@ def _download_photo(url: str) -> Image.Image | None:
 #  Matplotlib drawing primitives
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _draw_banner(fig: plt.Figure, name: str) -> None:
+def _draw_banner(fig: plt.Figure, name: str, batter_side: str | None = None) -> None:
     """Dark-navy banner across the top of the page."""
     ax = fig.add_axes([0, 0.945, 1, 0.055])
     ax.set_facecolor(_NAVY)
@@ -243,8 +294,11 @@ def _draw_banner(fig: plt.Figure, name: str) -> None:
         fontsize=12.5, fontweight="bold", color="white",
         fontfamily="sans-serif",
     )
+    # The subline always names the batter side, so a stamp-less report can never
+    # be mistaken for an unfiltered one.
+    subtitle = f"{date.today().strftime('%B %d, %Y')}  —  {_side_label(batter_side)}"
     ax.text(
-        0.5, 0.15, date.today().strftime("%B %d, %Y"),
+        0.5, 0.15, subtitle,
         ha="center", va="center",
         fontsize=7, color="#8eafd4", fontfamily="sans-serif",
     )
@@ -396,6 +450,7 @@ def _generate_pdf(
     season_stats: pd.DataFrame | None,
     pitch_data: pd.DataFrame | None,
     pitch_tag: str,
+    batter_side: str | None,
 ) -> str:
     """Build a single-player scouting-report PDF and return its file path."""
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -410,6 +465,7 @@ def _generate_pdf(
             season_stats=season_stats,
             pitch_data=pitch_data,
             pitch_tag=pitch_tag,
+            batter_side=batter_side,
         )
 
     return output_path
@@ -418,6 +474,7 @@ def _generate_pdf(
 def _generate_team_pdf(
     team_players: pd.DataFrame,
     pitch_tag: str,
+    batter_side: str | None,
 ) -> str:
     """Build a team multi-page PDF (one player per page)."""
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -437,6 +494,7 @@ def _generate_team_pdf(
                 season_stats=stats,
                 pitch_data=pitch_df,
                 pitch_tag=pitch_tag,
+                batter_side=batter_side,
             )
 
     return output_path
@@ -450,32 +508,38 @@ def _append_player_page(
     season_stats: pd.DataFrame | None,
     pitch_data: pd.DataFrame | None,
     pitch_tag: str,
+    batter_side: str | None,
 ) -> None:
     """Assemble charts/tables and append exactly one player page to a PDF."""
     has_pitches = pitch_data is not None and not pitch_data.empty
 
-    filtered: pd.DataFrame | None = None
+    filtered: pd.DataFrame | None = None    # tag-cleaned, both sides → heatmaps
+    side_df: pd.DataFrame | None = None     # + batter side → movement / usage
     split_df: pd.DataFrame | None = None
     if has_pitches:
         filtered = pitch_data.copy()
         if pitch_tag in filtered.columns:
             filtered = filtered.dropna(subset=[pitch_tag])
             filtered = filtered[filtered[pitch_tag] != "Undefined"]
-        split_df = compute_pitch_split(filtered, pitch_tag)
+        # Movement + usage follow the batter-side radio; the heatmaps below keep
+        # reading `filtered` because they ARE the per-side split.
+        side_df = filter_batter_side(filtered, batter_side)
+        split_df = compute_pitch_split(side_df, pitch_tag)
 
     scatter_images: list[np.ndarray | None] = []
     heatmap_images: list[np.ndarray | None] = []
     if has_pitches and filtered is not None and not filtered.empty:
-        for x_col, y_col in _SCATTER_PAIRS:
-            pfig = build_scatter(filtered, x_col, y_col, pitch_tag)
-            pfig.update_layout(margin=dict(l=50, r=10, t=10, b=40), height=260)
-            scatter_images.append(_plotly_to_image(pfig, width=620, height=360))
-            del pfig
+        if side_df is not None and not side_df.empty:
+            for x_col, y_col in _SCATTER_PAIRS:
+                pfig = build_scatter(side_df, x_col, y_col, pitch_tag)
+                pfig.update_layout(margin=dict(l=50, r=10, t=10, b=40), height=260)
+                scatter_images.append(_plotly_to_image(pfig, width=620, height=360))
+                del pfig
 
         rh_df = filter_batter_side(filtered, "Right")
         lh_df = filter_batter_side(filtered, "Left")
-        for side_df in [rh_df, lh_df]:
-            hfig = build_heatmap(side_df)
+        for hm_df in [rh_df, lh_df]:
+            hfig = build_heatmap(hm_df)
             hfig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=250)
             heatmap_images.append(_plotly_to_image(hfig, width=620, height=340))
             del hfig
@@ -489,6 +553,7 @@ def _append_player_page(
         scatter_images=scatter_images,
         heatmap_images=heatmap_images,
         has_pitches=has_pitches,
+        batter_side=batter_side,
     )
 
 
@@ -550,9 +615,15 @@ def _build_page(
     scatter_images: list[np.ndarray | None],
     heatmap_images: list[np.ndarray | None],
     has_pitches: bool,
+    batter_side: str | None,
 ) -> None:
     fig = plt.figure(figsize=(8.5, 11), facecolor="white")
-    _draw_banner(fig, name)
+    _draw_banner(fig, name, batter_side)
+
+    # Movement + usage honour the batter-side selection, so their section labels
+    # name it. The heatmaps are the side split itself and stay unlabelled.
+    side_label = BATTER_SIDE_LABELS.get(batter_side)
+    side_suffix = f"  —  {side_label.upper()}" if side_label else ""
 
     page_w = 1.0 - 2 * _LR
 
@@ -580,7 +651,7 @@ def _build_page(
     r1_bot = 0.510
     r1_h = r1_top - r1_bot
 
-    _section_label(fig, r1_label, "PITCH MOVEMENT")
+    _section_label(fig, r1_label, f"PITCH MOVEMENT{side_suffix}")
 
     cw = (page_w - _GAP) / 2
     cx1 = _LR
@@ -594,10 +665,7 @@ def _build_page(
         h=r1_h,
         title=_SCATTER_TITLES[0],
         image=scatter_images[0] if len(scatter_images) > 0 else None,
-        empty_text=(
-            "Install kaleido to\nenable chart export"
-            if has_pitches else "No pitch data"
-        ),
+        empty_text=_chart_empty_text(has_pitches, bool(scatter_images), batter_side),
     )
     _render_chart_card(
         fig,
@@ -607,10 +675,7 @@ def _build_page(
         h=r1_h,
         title=_SCATTER_TITLES[1],
         image=scatter_images[1] if len(scatter_images) > 1 else None,
-        empty_text=(
-            "Install kaleido to\nenable chart export"
-            if has_pitches else "No pitch data"
-        ),
+        empty_text=_chart_empty_text(has_pitches, bool(scatter_images), batter_side),
     )
 
     # ── Row 2: Pitch Heatmaps (2 charts) ──────────────────────────────────
@@ -653,7 +718,7 @@ def _build_page(
     r3_top = 0.268
     r3_bot = 0.045
 
-    _section_label(fig, r3_label, "PITCH USAGE BY COUNT")
+    _section_label(fig, r3_label, f"PITCH USAGE BY COUNT{side_suffix}")
     split_x = 0.02
     split_w = 0.96
     _draw_bordered_rect(fig, split_x, r3_bot, split_w, r3_top - r3_bot)

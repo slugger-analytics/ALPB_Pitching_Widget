@@ -3,7 +3,8 @@
 The two movement scatter callbacks and the pitch-usage table callback each gain a
 trailing ``batter-side`` input. Heatmaps stay split by side but the shared filter
 now hardens ``_filter_by_side`` against a missing ``batter_side`` column. The PDF
-export deliberately keeps rendering All (no batter-side input) — guarded here.
+export follows the same radio (movement + usage filtered, heatmaps still split)
+— that contract is guarded here.
 """
 
 from __future__ import annotations
@@ -107,5 +108,6 @@ def test_heatmap_filter_missing_column_no_keyerror(records: list[dict]) -> None:
 
 # ── PDF convention guard ──────────────────────────────────────────────────────
 
-def test_pdf_export_has_no_batter_side_input() -> None:
-    assert "batter-side" not in inspect.getsource(pdf_export)
+def test_pdf_export_takes_batter_side_state() -> None:
+    assert "batter-side" in inspect.getsource(pdf_export)
+    assert "batter_side" in inspect.signature(pdf_export.download_pdf).parameters

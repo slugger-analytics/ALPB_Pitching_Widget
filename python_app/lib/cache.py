@@ -13,13 +13,30 @@ import time
 
 import pandas as pd
 
-from python_app.config import NEGATIVE_ID_TTL_SECONDS, ROSTER_TTL_SECONDS
+from python_app.config import (
+    NEGATIVE_ID_TTL_SECONDS,
+    NEGATIVE_PITCH_DATA_TTL_SECONDS,
+    PITCH_DATA_TTL_SECONDS,
+    REFETCH_BACKOFF_SECONDS,
+    ROSTER_TTL_SECONDS,
+    SEASON_STATS_TTL_SECONDS,
+)
 from python_app.lib.api import (
     fetch_all_pitchers_combined,
     fetch_alpb_pitcher_info,
     fetch_alpb_pitches,
     fetch_iscore_player_stats,
 )
+
+
+def _backoff_stamp(ttl: int) -> float:
+    """Cached-at stamp that re-expires an entry in ``REFETCH_BACKOFF_SECONDS``.
+
+    Used when a refetch fails and the previously cached value is kept: the entry
+    must stay servable, but it must not be left expired, or every later view
+    would issue its own upstream request while the API is degraded.
+    """
+    return time.monotonic() - max(ttl - REFETCH_BACKOFF_SECONDS, 0)
 
 
 class DataCache:
@@ -31,8 +48,14 @@ class DataCache:
         # Each entry is (player_id_or_None, cached_at_monotonic). Positive ids
         # persist; negative (None) entries expire after NEGATIVE_ID_TTL_SECONDS.
         self._alpb_ids: dict[str, tuple[str | None, float]] = {}
-        self._pitch_data: dict[str, list[dict] | None] = {}
-        self._season_stats: dict[str, pd.DataFrame | None] = {}
+        # Each entry is (records_or_None, cached_at_monotonic). Populated entries
+        # expire after PITCH_DATA_TTL_SECONDS; an empty (None) entry expires after
+        # the shorter NEGATIVE_PITCH_DATA_TTL_SECONDS so a pitcher whose Trackman
+        # data lands after his first view stops reading as permanently empty.
+        self._pitch_data: dict[str, tuple[list[dict] | None, float]] = {}
+        # Each entry is (stats_or_None, cached_at_monotonic) — an iScore season
+        # line moves every time a game is finalised.
+        self._season_stats: dict[str, tuple[pd.DataFrame | None, float]] = {}
         self._roster_lock = threading.Lock()
         self._roster_refreshing = False
 
@@ -143,9 +166,13 @@ class DataCache:
     # ── Season stats ──────────────────────────────────────────────────────
 
     def get_season_stats(self, iscore_guid: str) -> pd.DataFrame | None:
-        """Return cached season stats from iScore."""
-        if iscore_guid in self._season_stats:
-            return self._season_stats[iscore_guid]
+        """Return cached season stats from iScore, refetching past SEASON_STATS_TTL_SECONDS."""
+        cached = self._season_stats.get(iscore_guid)
+        if cached is not None:
+            stats, cached_at = cached
+            if (time.monotonic() - cached_at) < SEASON_STATS_TTL_SECONDS:
+                return stats
+            # entry expired — fall through and refetch
 
         player = self.get_player(iscore_guid)
         combined: pd.DataFrame | None = None
@@ -171,7 +198,12 @@ class DataCache:
                 )
             combined = combined.fillna("-")
 
-        self._season_stats[iscore_guid] = combined
+        if combined is None and cached is not None and cached[0] is not None:
+            # Transient iScore failure — keep the line we serve and retry after a
+            # short backoff rather than on every single view.
+            self._season_stats[iscore_guid] = (cached[0], _backoff_stamp(SEASON_STATS_TTL_SECONDS))
+            return cached[0]
+        self._season_stats[iscore_guid] = (combined, time.monotonic())
         return combined
 
     # ── ALPB player ID ────────────────────────────────────────────────────
@@ -206,18 +238,44 @@ class DataCache:
 
     # ── Pitch-by-pitch data ───────────────────────────────────────────────
 
+    # No per-key lock here (unlike the roster): the roster fetch fans out across
+    # every team, while these are per-player fetches and gunicorn runs
+    # --workers 1 --threads 2, so at most two threads can race at TTL expiry.
+    # Revisit if the worker/thread count is ever raised.
     def get_pitch_data(self, player_id: str) -> list[dict] | None:
-        """Return raw pitch records for *player_id*, fetching on first access."""
+        """Return raw pitch records for *player_id*, fetching on first access.
+
+        Records expire after ``PITCH_DATA_TTL_SECONDS`` so pitches thrown since the
+        last view appear without a container restart; an empty result expires after
+        the shorter ``NEGATIVE_PITCH_DATA_TTL_SECONDS`` because re-testing it costs
+        a single request.  As with the roster, a failed refetch keeps serving the
+        records already loaded — a transient API blip must never blank a pitcher —
+        and is retried after ``REFETCH_BACKOFF_SECONDS``, not on every view.
+        """
         if not player_id:
             return None
-        if player_id in self._pitch_data:
-            return self._pitch_data[player_id]
+        cached = self._pitch_data.get(player_id)
+        if cached is not None:
+            records, cached_at = cached
+            ttl = (
+                NEGATIVE_PITCH_DATA_TTL_SECONDS if records is None
+                else PITCH_DATA_TTL_SECONDS
+            )
+            if (time.monotonic() - cached_at) < ttl:
+                return records
+            # entry expired — fall through and refetch
         df = fetch_alpb_pitches(player_id)
         if df is None or df.empty:
-            self._pitch_data[player_id] = None
+            if cached is not None and cached[0] is not None:
+                # Transient/empty refetch — keep the pitches we already serve
+                # (load_roster takes the same stance: never serve empty over good
+                # data) and retry after a short backoff rather than on every view.
+                self._pitch_data[player_id] = (cached[0], _backoff_stamp(PITCH_DATA_TTL_SECONDS))
+                return cached[0]
+            self._pitch_data[player_id] = (None, time.monotonic())
             return None
         records = df.to_dict("records")
-        self._pitch_data[player_id] = records
+        self._pitch_data[player_id] = (records, time.monotonic())
         return records
 
 

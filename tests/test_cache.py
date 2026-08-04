@@ -1,9 +1,9 @@
 """Tests for periodic roster + cache refresh (P1).
 
-A Fargate container lives for days, so the roster and negative ALPB-id lookups
-must expire and refresh in place — otherwise newly signed pitchers never appear
-without a container restart. A transient API failure must never wipe the
-already-served roster.
+A Fargate container lives for days, so the roster, negative ALPB-id lookups,
+pitch data and season stats must expire and refresh in place — otherwise newly
+signed pitchers never appear and today's pitches never load without a container
+restart. A transient API failure must never wipe the already-served data.
 """
 
 from __future__ import annotations
@@ -13,7 +13,14 @@ import time
 
 import pandas as pd
 
-from python_app.config import NEGATIVE_ID_TTL_SECONDS, ROSTER_TTL_SECONDS
+from python_app.config import (
+    NEGATIVE_ID_TTL_SECONDS,
+    NEGATIVE_PITCH_DATA_TTL_SECONDS,
+    PITCH_DATA_TTL_SECONDS,
+    REFETCH_BACKOFF_SECONDS,
+    ROSTER_TTL_SECONDS,
+    SEASON_STATS_TTL_SECONDS,
+)
 from python_app.lib.cache import DataCache
 
 
@@ -177,3 +184,203 @@ def test_concurrent_refresh_does_not_double_fetch(monkeypatch):
     release.set()
     t1.join(timeout=5)
     assert len(calls) == 1
+
+
+# ── Pitch data / season stats TTLs ────────────────────────────────────────
+
+def _pitch_df(speed: float = 92.0) -> pd.DataFrame:
+    return pd.DataFrame({"rel_speed": [speed], "auto_pitch_type": ["Fastball"]})
+
+
+def _stats_df(era: float = 3.50) -> pd.DataFrame:
+    return pd.DataFrame({"name": ["ALPB 2026"], "era": [era]})
+
+
+def test_pitch_data_expires_and_refetches(monkeypatch):
+    calls = []
+
+    def fake_pitches(player_id):
+        calls.append(player_id)
+        return _pitch_df(90.0 + len(calls))
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", fake_pitches)
+
+    dc = DataCache()
+    assert dc.get_pitch_data("p1")[0]["rel_speed"] == 91.0
+    assert len(calls) == 1
+
+    # Age the entry past its TTL → today's pitches are picked up.
+    dc._pitch_data["p1"] = (dc._pitch_data["p1"][0], time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+    assert dc.get_pitch_data("p1")[0]["rel_speed"] == 92.0
+    assert len(calls) == 2
+
+
+def test_fresh_pitch_data_not_refetched(monkeypatch):
+    calls = []
+
+    def fake_pitches(player_id):
+        calls.append(player_id)
+        return _pitch_df()
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", fake_pitches)
+
+    dc = DataCache()
+    dc.get_pitch_data("p1")
+    dc.get_pitch_data("p1")
+    assert len(calls) == 1
+
+
+def test_empty_pitch_data_retried_sooner_than_populated(monkeypatch):
+    # The whole point of the negative TTL — an empty result must be cheap to retry.
+    assert NEGATIVE_PITCH_DATA_TTL_SECONDS < PITCH_DATA_TTL_SECONDS
+
+    calls = []
+
+    def fake_pitches(player_id):
+        calls.append(player_id)
+        return pd.DataFrame()
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", fake_pitches)
+
+    dc = DataCache()
+    assert dc.get_pitch_data("p1") is None
+    assert len(calls) == 1
+
+    # Within the negative TTL → cached, no refetch.
+    assert dc.get_pitch_data("p1") is None
+    assert len(calls) == 1
+
+    # Past the negative TTL but well inside the populated TTL → exactly one retry.
+    dc._pitch_data["p1"] = (None, time.monotonic() - (NEGATIVE_PITCH_DATA_TTL_SECONDS + 1))
+    assert dc.get_pitch_data("p1") is None
+    assert len(calls) == 2
+
+
+def test_pitch_refetch_failure_keeps_previous_records(monkeypatch):
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+    dc = DataCache()
+    records = dc.get_pitch_data("p1")
+    assert records and records[0]["rel_speed"] == 92.0
+
+    # (a) None on refetch → previous records retained.
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: None)
+    dc._pitch_data["p1"] = (records, time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+    assert dc.get_pitch_data("p1") == records  # never blanked by a blip
+
+    # (b) Empty frame on refetch → previous records retained.
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: pd.DataFrame())
+    dc._pitch_data["p1"] = (records, time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+    assert dc.get_pitch_data("p1") == records
+
+
+def test_pitch_refetch_failure_backs_off_instead_of_hammering(monkeypatch):
+    # A kept-on-failure entry must be restamped, or a sustained ALPB outage turns
+    # every view (and every page of a team PDF) into its own upstream request.
+    assert REFETCH_BACKOFF_SECONDS < PITCH_DATA_TTL_SECONDS
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+    dc = DataCache()
+    records = dc.get_pitch_data("p1")
+
+    calls = []
+
+    def down(player_id):
+        calls.append(player_id)
+        return None
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", down)
+    dc._pitch_data["p1"] = (records, time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+
+    for _ in range(50):
+        assert dc.get_pitch_data("p1") == records
+    assert len(calls) == 1  # one retry, then served from the backed-off entry
+
+    # Past the backoff → exactly one more retry.
+    dc._pitch_data["p1"] = (records, time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+    dc.get_pitch_data("p1")
+    assert len(calls) == 2
+
+
+def test_season_stats_expires_and_refetches(monkeypatch):
+    calls = []
+
+    def fake_stats(guid):
+        calls.append(guid)
+        return _stats_df(3.00 + len(calls))
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", fake_stats)
+
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+
+    assert dc.get_season_stats("g1")["era"].iloc[0] == 4.00
+    assert len(calls) == 1
+
+    dc._season_stats["g1"] = (dc._season_stats["g1"][0], time.monotonic() - (SEASON_STATS_TTL_SECONDS + 1))
+    assert dc.get_season_stats("g1")["era"].iloc[0] == 5.00
+    assert len(calls) == 2
+
+
+def test_fresh_season_stats_not_refetched(monkeypatch):
+    calls = []
+
+    def fake_stats(guid):
+        calls.append(guid)
+        return _stats_df()
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", fake_stats)
+
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+
+    dc.get_season_stats("g1")
+    dc.get_season_stats("g1")
+    assert len(calls) == 1
+
+
+def test_season_stats_refetch_failure_keeps_previous_line(monkeypatch):
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", lambda guid: _stats_df())
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+    first = dc.get_season_stats("g1")
+    assert first is not None and not first.empty
+
+    def boom(guid):
+        raise RuntimeError("iScore unreachable")
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", boom)
+    dc._season_stats["g1"] = (first, time.monotonic() - (SEASON_STATS_TTL_SECONDS + 1))
+    again = dc.get_season_stats("g1")
+    assert again is not None and not again.empty  # never blanked by a blip
+
+
+def test_season_stats_refetch_failure_backs_off_instead_of_hammering(monkeypatch):
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", lambda guid: _stats_df())
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+    first = dc.get_season_stats("g1")
+
+    calls = []
+
+    def down(guid):
+        calls.append(guid)
+        raise RuntimeError("iScore unreachable")
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", down)
+    dc._season_stats["g1"] = (first, time.monotonic() - (SEASON_STATS_TTL_SECONDS + 1))
+
+    for _ in range(50):
+        assert dc.get_season_stats("g1") is not None
+    assert len(calls) == 1  # one retry, then served from the backed-off entry
+
+
+def test_empty_season_stats_frame_does_not_raise(monkeypatch):
+    # A DataFrame must only ever be tested with `is None` / `.empty` — bare
+    # truthiness raises ValueError and would surface as a 500 on the stats card.
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", lambda guid: _stats_df())
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+    dc._season_stats["g1"] = (pd.DataFrame(), time.monotonic() - (SEASON_STATS_TTL_SECONDS + 1))
+
+    result = dc.get_season_stats("g1")
+    assert result is not None and not result.empty
