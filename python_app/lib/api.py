@@ -8,7 +8,9 @@ belongs to :mod:`python_app.lib.cache`.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 import re
+import time
 import unicodedata
 
 import pandas as pd
@@ -24,6 +26,13 @@ from python_app.config import (
     ISCORE_SEASON_NAME,
     MAX_WORKERS,
 )
+
+log = logging.getLogger(__name__)
+
+# A page read is retried briefly before the whole fetch is declared failed:
+# the alternative to a retry here is discarding a good season over one blip.
+_ALPB_PAGE_ATTEMPTS = 3
+_ALPB_PAGE_RETRY_DELAY_SECONDS = 0.5
 
 _alpb_session = requests.Session()
 _alpb_session.headers.update({"x-api-key": ALPB_API_KEY})
@@ -391,7 +400,15 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
 
 
 def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
-    """Fetch all pitch-by-pitch Trackman data for one pitcher (paginated)."""
+    """Fetch all pitch-by-pitch Trackman data for one pitcher (paginated).
+
+    Returns ``None`` when the season could not be read in full — including the
+    case where an early page succeeded and a later one failed. A partial frame
+    must never be returned: the caller caches whatever it gets as that pitcher's
+    complete season for the full TTL, and prints it into the scouting PDFs handed
+    to staff who never saw the screen. Losing three quarters of a season silently
+    is much worse than briefly having no data.
+    """
     if not player_id:
         return None
 
@@ -400,6 +417,13 @@ def fetch_alpb_pitches(player_id: str) -> pd.DataFrame | None:
     page = 1
     while True:
         page_data = _fetch_alpb_page(url, player_id, page)
+        if page_data is None:
+            log.warning(
+                "ALPB pitch fetch failed for %s on page %d after %d record(s); "
+                "discarding the partial season rather than caching it as complete",
+                player_id, page, len(all_data),
+            )
+            return None
         if not page_data:
             break
         all_data.extend(page_data)
@@ -423,14 +447,29 @@ def _safe_str(value) -> str:
     return str(value)
 
 
-def _fetch_alpb_page(url: str, player_id: str, page: int) -> list:
-    """Fetch one page of ALPB pitch data."""
-    try:
-        res = _alpb_session.get(
-            url, params={"pitcher_id": player_id, "page": page}, timeout=(5, 15)
-        )
-        if res.status_code == 200:
-            return res.json().get("data", [])
-    except Exception:
-        pass
-    return []
+def _fetch_alpb_page(url: str, player_id: str, page: int) -> list | None:
+    """Fetch one page of ALPB pitch data.
+
+    ``[]`` means the page is genuinely empty, i.e. the end of this pitcher's
+    data. ``None`` means the page could not be read. The two used to be the same
+    value, which is what let a timed-out page read as end-of-data and turn a
+    quarter of a season into a complete one.
+
+    A short bounded retry absorbs the blips this is most likely to see; a
+    persistent failure is reported, never guessed at.
+    """
+    for attempt in range(_ALPB_PAGE_ATTEMPTS):
+        try:
+            res = _alpb_session.get(
+                url, params={"pitcher_id": player_id, "page": page}, timeout=(5, 15)
+            )
+            if res.status_code == 200:
+                return res.json().get("data", [])
+            log.warning("ALPB pitches page %d for %s returned HTTP %d (attempt %d/%d)",
+                        page, player_id, res.status_code, attempt + 1, _ALPB_PAGE_ATTEMPTS)
+        except Exception as exc:
+            log.warning("ALPB pitches page %d for %s failed: %s (attempt %d/%d)",
+                        page, player_id, exc, attempt + 1, _ALPB_PAGE_ATTEMPTS)
+        if attempt + 1 < _ALPB_PAGE_ATTEMPTS:
+            time.sleep(_ALPB_PAGE_RETRY_DELAY_SECONDS * (attempt + 1))
+    return None
