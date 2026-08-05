@@ -49,7 +49,7 @@ from python_app.features.heatmaps import (
 from python_app.features.pitch_split import compute_pitch_split
 from python_app.features.scatter_plots import build_scatter
 from python_app.lib.cache import cache
-from python_app.lib.filters import filter_batter_side
+from python_app.lib.filters import drop_unknown_pitch_types, filter_batter_side
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -187,22 +187,40 @@ def _filename_side_suffix(batter_side: str | None) -> str:
     return f" {label}" if label else ""
 
 
+# Which radio produced the pitch-type column, for the empty-state wording.
+PITCH_TAG_LABELS = {
+    "auto_pitch_type": "machine-tagged",
+    "tagged_pitch_type": "human-tagged",
+}
+
+
 def _chart_empty_text(
-    has_pitches: bool, rendered: bool, batter_side: str | None,
+    has_pitches: bool,
+    has_tagged: bool,
+    has_side_rows: bool,
+    rendered: bool,
+    batter_side: str | None,
+    pitch_tag: str | None = None,
 ) -> str:
     """Empty-state text for a movement-chart card.
 
-    Distinguishes "the batter-side filter left no pitches" (no chart was even
-    built) from "kaleido could not convert the figure" so the report never
-    blames a missing library for an empty side.  The wording matches the web
-    placeholder in ``scatter_plots._empty_side_figure``.
+    A printed scouting report states this as fact, so every empty case has to
+    name its own reason. "No pitches vs LHB" used to cover the case where the
+    pitcher simply carries no tags under the selected radio: Jose Lopez has 12
+    real pitches to LHB and 6 to RHB, is 100% "Undefined" under Human Tagged,
+    and both his vs-LHB and his vs-RHB reports asserted he had faced neither
+    side. Two of twelve sampled Charleston pitchers are in that state.
+
+    The wording matches the web placeholder in ``scatter_plots._empty_side_figure``.
     """
     if not has_pitches:
         return "No pitch data"
-    if not rendered:
+    if not has_tagged:
+        label = PITCH_TAG_LABELS.get(pitch_tag or "", "tagged")
+        return f"No {label} pitch types\nfor this pitcher"
+    if not has_side_rows:
         label = BATTER_SIDE_LABELS.get(batter_side)
-        if label:
-            return f"No pitches {label}"
+        return f"No pitches {label}" if label else "No pitch data"
     return "Install kaleido to\nenable chart export"
 
 
@@ -519,8 +537,7 @@ def _append_player_page(
     if has_pitches:
         filtered = pitch_data.copy()
         if pitch_tag in filtered.columns:
-            filtered = filtered.dropna(subset=[pitch_tag])
-            filtered = filtered[filtered[pitch_tag] != "Undefined"]
+            filtered = drop_unknown_pitch_types(filtered, pitch_tag)
         # Movement + usage follow the batter-side radio; the heatmaps below keep
         # reading `filtered` because they ARE the per-side split.
         side_df = filter_batter_side(filtered, batter_side)
@@ -553,6 +570,9 @@ def _append_player_page(
         scatter_images=scatter_images,
         heatmap_images=heatmap_images,
         has_pitches=has_pitches,
+        has_tagged=filtered is not None and not filtered.empty,
+        has_side_rows=side_df is not None and not side_df.empty,
+        pitch_tag=pitch_tag,
         batter_side=batter_side,
     )
 
@@ -615,6 +635,11 @@ def _build_page(
     scatter_images: list[np.ndarray | None],
     heatmap_images: list[np.ndarray | None],
     has_pitches: bool,
+    # Why a chart card may be empty — the page states it as fact, so the reason
+    # travels with the data rather than being guessed at from the layout.
+    has_tagged: bool,
+    has_side_rows: bool,
+    pitch_tag: str | None,
     batter_side: str | None,
 ) -> None:
     fig = plt.figure(figsize=(8.5, 11), facecolor="white")
@@ -665,7 +690,10 @@ def _build_page(
         h=r1_h,
         title=_SCATTER_TITLES[0],
         image=scatter_images[0] if len(scatter_images) > 0 else None,
-        empty_text=_chart_empty_text(has_pitches, bool(scatter_images), batter_side),
+        empty_text=_chart_empty_text(
+            has_pitches, has_tagged, has_side_rows,
+            bool(scatter_images), batter_side, pitch_tag,
+        ),
     )
     _render_chart_card(
         fig,
@@ -675,7 +703,10 @@ def _build_page(
         h=r1_h,
         title=_SCATTER_TITLES[1],
         image=scatter_images[1] if len(scatter_images) > 1 else None,
-        empty_text=_chart_empty_text(has_pitches, bool(scatter_images), batter_side),
+        empty_text=_chart_empty_text(
+            has_pitches, has_tagged, has_side_rows,
+            bool(scatter_images), batter_side, pitch_tag,
+        ),
     )
 
     # ── Row 2: Pitch Heatmaps (2 charts) ──────────────────────────────────

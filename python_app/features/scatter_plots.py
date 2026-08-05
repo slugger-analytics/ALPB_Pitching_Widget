@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from dash import Input, Output, callback, dcc
 
 from python_app.config import AXIS_LABELS, BATTER_SIDE_LABELS, PITCH_COLORS
-from python_app.lib.filters import filter_batter_side
+from python_app.lib.filters import drop_unknown_pitch_types, filter_batter_side
 from python_app.lib.styles import info_card
 
 
@@ -70,9 +70,7 @@ def build_scatter(
 
     plot_df = df.copy()
     if tag in plot_df.columns:
-        plot_df = plot_df[
-            plot_df[tag].notna() & (plot_df[tag] != "Undefined")
-        ]
+        plot_df = drop_unknown_pitch_types(plot_df, tag)
         plot_df["_tag"] = plot_df[tag].astype(str)
     else:
         return go.Figure()

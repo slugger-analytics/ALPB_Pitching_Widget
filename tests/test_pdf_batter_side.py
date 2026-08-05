@@ -208,18 +208,33 @@ def test_empty_side_still_writes_a_pdf(monkeypatch, pitches, player) -> None:
 # ── Empty-state copy ──────────────────────────────────────────────────────────
 
 def test_chart_empty_text_wording() -> None:
-    assert _chart_empty_text(True, False, "Left") == "No pitches vs LHB"
-    assert _chart_empty_text(True, False, "Right") == "No pitches vs RHB"
+    # Tagged pitches exist, none of them vs this side — a true side statement.
+    assert _chart_empty_text(True, True, False, False, "Left") == "No pitches vs LHB"
+    assert _chart_empty_text(True, True, False, False, "Right") == "No pitches vs RHB"
     # A chart that WAS built but could not be rasterised is a kaleido problem,
     # never a batter-side one.
-    assert _chart_empty_text(True, True, "Left") == "Install kaleido to\nenable chart export"
-    assert _chart_empty_text(False, False, "All") == "No pitch data"
+    assert (_chart_empty_text(True, True, True, True, "Left")
+            == "Install kaleido to\nenable chart export")
+    assert _chart_empty_text(False, False, False, False, "All") == "No pitch data"
+
+
+def test_an_untagged_pitcher_is_not_reported_as_never_facing_the_side() -> None:
+    """The live Jose Lopez case: 12 pitches to LHB, 6 to RHB, 100% "Undefined"
+    under Human Tagged — and both his vs-LHB and his vs-RHB reports claimed he
+    had faced neither side. The page must blame the missing tags, not the hitter.
+    """
+    for side in ("Left", "Right"):
+        text = _chart_empty_text(True, False, False, False, side, "tagged_pitch_type")
+        assert "No pitches" not in text, text
+        assert "human-tagged" in text
+    machine = _chart_empty_text(True, False, False, False, "Left", "auto_pitch_type")
+    assert "machine-tagged" in machine
 
 
 def test_chart_empty_text_matches_the_web_placeholder() -> None:
     fig = scatter_plots._empty_side_figure("Left")
     web_text = " ".join(a.text for a in fig.layout.annotations if a.text)
-    assert _chart_empty_text(True, False, "Left") == web_text
+    assert _chart_empty_text(True, True, False, False, "Left") == web_text
 
 
 # ── Stamps: banner, section labels, filename ──────────────────────────────────
@@ -243,6 +258,9 @@ def _section_labels(monkeypatch, batter_side: str | None, player: pd.Series) -> 
                 scatter_images=[],
                 heatmap_images=[],
                 has_pitches=False,
+                has_tagged=False,
+                has_side_rows=False,
+                pitch_tag="auto_pitch_type",
                 batter_side=batter_side,
             )
     finally:

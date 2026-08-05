@@ -14,7 +14,7 @@ import pandas as pd
 from dash import Input, Output, callback, html
 
 from python_app.config import BATTER_SIDE_LABELS
-from python_app.lib.filters import filter_batter_side
+from python_app.lib.filters import drop_unknown_pitch_types, filter_batter_side
 from python_app.lib.styles import info_card, styled_table
 
 
@@ -60,7 +60,7 @@ def compute_pitch_split(pitch_data: pd.DataFrame, tag: str) -> pd.DataFrame:
 
     df = pitch_data.copy()
     df = df.dropna(subset=["balls", "strikes", tag])
-    df = df[df[tag] != "Undefined"]
+    df = drop_unknown_pitch_types(df, tag)
     if df.empty:
         return empty
 

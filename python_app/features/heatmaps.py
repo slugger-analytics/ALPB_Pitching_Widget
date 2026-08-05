@@ -16,7 +16,7 @@ from scipy.stats import gaussian_kde
 
 from dash import Input, Output, callback, dcc
 
-from python_app.lib.filters import filter_batter_side
+from python_app.lib.filters import drop_unknown_pitch_types, filter_batter_side
 from python_app.lib.styles import info_card
 
 # Card / section titles — shared with the PDF export (pdf_export imports these)
@@ -142,8 +142,7 @@ def _filter_by_side(
     if not pitch_records:
         return pd.DataFrame()
     df = filter_batter_side(pd.DataFrame(pitch_records), batter_side)
-    if tag in df.columns:
-        df = df[df[tag].notna() & (df[tag] != "Undefined")]
+    df = drop_unknown_pitch_types(df, tag)
     if pitch_type and pitch_type != "All" and tag in df.columns:
         df = df[df[tag] == pitch_type]
     return df

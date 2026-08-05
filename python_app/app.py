@@ -26,6 +26,7 @@ import pandas as pd
 
 from python_app.config import BATTER_SIDE_ALL, BATTER_SIDE_LABELS
 from python_app.lib.cache import cache
+from python_app.lib.filters import known_pitch_types
 from python_app.lib.styles import section_label
 
 # Importing feature modules registers their Dash callbacks.
@@ -448,7 +449,7 @@ def update_pitch_type_options(
     df = pd.DataFrame(records)
     if tag not in df.columns:
         return default, "All"
-    types = sorted(t for t in df[tag].dropna().unique() if t != "Undefined")
+    types = known_pitch_types(df, tag)
     return default + [{"label": t, "value": t} for t in types], "All"
 
 
