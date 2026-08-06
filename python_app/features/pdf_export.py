@@ -1,9 +1,11 @@
 """
-PDF scouting report export (single-player and team multi-page).
+PDF scouting report export — one pitcher, one page.
 
-Callback : triggered by either PDF button in the toolbar.
+Callback : triggered by the one-page PDF button in the toolbar.
+Route    : the same page is served per-pitcher over HTTP by ``team_pdf``, which
+           is how the team report is built (in the browser, page by page).
 Pipeline : pre-render Plotly figures → convert to raster images via kaleido
-           → compose everything onto matplotlib page(s) → save as PDF.
+           → compose everything onto a matplotlib page → save as PDF.
 
 Every chart and table reuses the **same public functions** that drive the
 Dash UI — nothing is re-implemented here:
@@ -17,9 +19,11 @@ from __future__ import annotations
 
 import io
 import tempfile
+import threading
 import traceback
 import textwrap
 from datetime import date
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import matplotlib
@@ -33,7 +37,7 @@ import requests
 from matplotlib.backends.backend_pdf import PdfPages
 from PIL import Image
 
-from dash import Input, Output, State, callback, ctx, dcc, no_update
+from dash import Input, Output, State, callback, dcc, no_update
 
 from python_app.config import (
     BATTER_SIDE_LABELS,
@@ -78,7 +82,10 @@ _HEATMAP_TITLES: list[str] = [
     HEATMAP_RH_TITLE,
     HEATMAP_LH_TITLE,
 ]
-_ALL_TEAMS = "__ALL_TEAMS__"
+# Page rendering is serialised: pyplot keeps global figure state and kaleido
+# exports through one process-wide scope, so two overlapping renders can mix
+# each other's charts. See `render_player_pdf_bytes`.
+_RENDER_LOCK = threading.Lock()
 
 # Batter-side stamp: BATTER_SIDE_LABELS covers "Right"/"Left"; the All /
 # None case is named explicitly so an exported report always states which
@@ -104,9 +111,7 @@ except ImportError:
 @callback(
     Output("download-pdf", "data"),
     Input("download-pdf-btn", "n_clicks"),
-    Input("download-team-pdf-btn", "n_clicks"),
     State("selected-player", "value"),
-    State("selected-team", "value"),
     State("pitch-data-store", "data"),
     State("tag-choice", "value"),
     State("batter-side", "value"),
@@ -114,57 +119,43 @@ except ImportError:
 )
 def download_pdf(
     player_clicks: int | None,
-    team_clicks: int | None,
     selected_iscore_guid: str | None,
-    selected_team: str | None,
     pitch_records: list[dict] | None,
     tag: str | None,
     batter_side: str | None,
 ):
-    """Generate and send either a player PDF or a team multi-page PDF."""
+    """Generate and send the on-screen pitcher's one-page report.
+
+    The team report is deliberately NOT here. Rendering a whole roster inside one
+    callback is a single request minutes long: High Point (34 pitchers) 504'd at
+    the ALB's 300s idle timeout, and Charleston needed 173.5s against gunicorn's
+    180s worker timeout even with a warm cache. It is assembled page by page in
+    the browser instead — see ``python_app/features/team_pdf.py``.
+    """
     # The report follows the on-screen batter-side radio: movement + usage are
     # filtered, the heatmaps stay split by side (they ARE the side split), and
     # every filtered section is stamped so the file can never silently disagree
     # with the screen.
     try:
+        if not player_clicks or not selected_iscore_guid:
+            return no_update
+        player = cache.get_player(selected_iscore_guid)
+        if player is None:
+            return no_update
+
         pitch_tag = tag or "auto_pitch_type"
-        triggered = ctx.triggered_id
+        selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
+        stats = cache.get_season_stats(str(player["iscore_guid"]))
+        pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
 
-        if triggered == "download-pdf-btn":
-            if not player_clicks or not selected_iscore_guid:
-                return no_update
-            player = cache.get_player(selected_iscore_guid)
-            if player is None:
-                return no_update
-
-            selected_name = str(player.get("full_name", "")).strip() or "Pitcher"
-            stats = cache.get_season_stats(str(player["iscore_guid"]))
-            pitch_df = pd.DataFrame(pitch_records) if pitch_records else None
-
-            pdf_path = _generate_pdf(
-                selected_name, player, stats, pitch_df, pitch_tag, batter_side,
-            )
-            filename = (
-                f"{_safe_filename(selected_name)} Pitcher Report"
-                f"{_filename_side_suffix(batter_side)}.pdf"
-            )
-            return dcc.send_file(pdf_path, filename=filename)
-
-        if triggered == "download-team-pdf-btn":
-            if not team_clicks or not selected_team or selected_team == _ALL_TEAMS:
-                return no_update
-            team_players = cache.get_players(selected_team)
-            if team_players.empty:
-                return no_update
-
-            pdf_path = _generate_team_pdf(team_players, pitch_tag, batter_side)
-            filename = (
-                f"{_safe_filename(selected_team)} Pitching Reports"
-                f"{_filename_side_suffix(batter_side)}.pdf"
-            )
-            return dcc.send_file(pdf_path, filename=filename)
-
-        return no_update
+        pdf_path = _generate_pdf(
+            selected_name, player, stats, pitch_df, pitch_tag, batter_side,
+        )
+        filename = (
+            f"{_safe_filename(selected_name)} Pitcher Report"
+            f"{_filename_side_suffix(batter_side)}.pdf"
+        )
+        return dcc.send_file(pdf_path, filename=filename)
     except Exception:
         traceback.print_exc()
         return no_update
@@ -284,8 +275,14 @@ def _plotly_to_image(
         return None
 
 
+@lru_cache(maxsize=512)
 def _download_photo(url: str) -> Image.Image | None:
-    """Fetch a player headshot from *url*.  Returns a PIL Image or *None*."""
+    """Fetch a player headshot from *url*.  Returns a PIL Image or *None*.
+
+    Memoised by URL: a team report is one request per pitcher, and headshots do
+    not change over the life of a container. Uncached, a 34-man export paid 34
+    external round-trips (10s timeout each) on top of the chart rendering.
+    """
     if not url:
         return None
     try:
@@ -462,6 +459,43 @@ def _draw_bordered_rect(
 #  PDF orchestration
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def render_player_pdf_bytes(
+    *,
+    name: str,
+    player: pd.Series,
+    season_stats: pd.DataFrame | None,
+    pitch_data: pd.DataFrame | None,
+    pitch_tag: str,
+    batter_side: str | None,
+) -> bytes:
+    """Render one player page and return the PDF bytes.
+
+    The single entry point for every report page — the toolbar download and the
+    per-player HTTP route in ``team_pdf`` both come through here, so a team
+    report merged in the browser is byte-for-byte the same page a coach gets
+    from the button.
+
+    Rendering holds ``_RENDER_LOCK``: matplotlib's pyplot state and kaleido's
+    export scope are both process-global, and a team export is now N concurrent
+    HTTP requests against a worker with two threads. Two overlapping renders can
+    otherwise splice one pitcher's chart into another's report — a report that
+    looks entirely plausible and is simply about the wrong man.
+    """
+    buffer = io.BytesIO()
+    with _RENDER_LOCK:
+        with PdfPages(buffer) as pdf:
+            _append_player_page(
+                pdf=pdf,
+                name=name,
+                player=player,
+                season_stats=season_stats,
+                pitch_data=pitch_data,
+                pitch_tag=pitch_tag,
+                batter_side=batter_side,
+            )
+    return buffer.getvalue()
+
+
 def _generate_pdf(
     name: str,
     player: pd.Series,
@@ -471,51 +505,17 @@ def _generate_pdf(
     batter_side: str | None,
 ) -> str:
     """Build a single-player scouting-report PDF and return its file path."""
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    output_path: str = tmp.name
-    tmp.close()
-
-    with PdfPages(output_path) as pdf:
-        _append_player_page(
-            pdf=pdf,
-            name=name,
-            player=player,
-            season_stats=season_stats,
-            pitch_data=pitch_data,
-            pitch_tag=pitch_tag,
-            batter_side=batter_side,
-        )
-
-    return output_path
-
-
-def _generate_team_pdf(
-    team_players: pd.DataFrame,
-    pitch_tag: str,
-    batter_side: str | None,
-) -> str:
-    """Build a team multi-page PDF (one player per page)."""
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    output_path: str = tmp.name
-    tmp.close()
-
-    with PdfPages(output_path) as pdf:
-        for _, player in _team_sorted(team_players).iterrows():
-            name = str(player.get("full_name", "")).strip() or "Pitcher"
-            iscore_guid = str(player.get("iscore_guid", "")).strip()
-            stats = cache.get_season_stats(iscore_guid) if iscore_guid else None
-            pitch_df = _pitch_df_for_player(player)
-            _append_player_page(
-                pdf=pdf,
-                name=name,
-                player=player,
-                season_stats=stats,
-                pitch_data=pitch_df,
-                pitch_tag=pitch_tag,
-                batter_side=batter_side,
-            )
-
-    return output_path
+    pdf_bytes = render_player_pdf_bytes(
+        name=name,
+        player=player,
+        season_stats=season_stats,
+        pitch_data=pitch_data,
+        pitch_tag=pitch_tag,
+        batter_side=batter_side,
+    )
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        return tmp.name
 
 
 def _append_player_page(

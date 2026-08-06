@@ -159,6 +159,23 @@ body {
 .btn-brand-outline:active {
     transform: translateY(0);
 }
+.btn-brand-outline:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Progress + outcome for the team report, which is merged page by page in the
+   browser and takes a while on a full roster. Empty until a run starts. */
+.team-pdf-status {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: #4a5568;
+    margin-top: 6px;
+}
+.team-pdf-status:empty {
+    display: none;
+}
 
 /* ── Content wrapper ─────────────────────────────────────────────── */
 .content-wrapper {

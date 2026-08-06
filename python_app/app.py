@@ -20,7 +20,16 @@ import traceback
 # works regardless of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dash import Dash, Input, Output, State, callback, dcc, html
+from dash import (
+    ClientsideFunction,
+    Dash,
+    Input,
+    Output,
+    State,
+    callback,
+    dcc,
+    html,
+)
 import dash_bootstrap_components as dbc
 import pandas as pd
 
@@ -37,6 +46,7 @@ from python_app.features import (  # noqa: F401
     player_info,
     scatter_plots,
     season_stats,
+    team_pdf,
 )
 
 # Roster-refresh Interval cadence (ms): poll fast until the roster first loads,
@@ -71,14 +81,24 @@ def _load_roster_bg() -> None:
 threading.Thread(target=_load_roster_bg, daemon=True).start()
 
 # ── Dash app ─────────────────────────────────────────────────────────────────
+_URL_BASE_PATHNAME = os.getenv("DASH_URL_BASE_PATHNAME", "/")
+
+# The browser merges the team report page by page (see features/team_pdf.py).
+_PDF_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"
+
 app = Dash(
     __name__,
-    url_base_pathname=os.getenv("DASH_URL_BASE_PATHNAME", "/"),
+    url_base_pathname=_URL_BASE_PATHNAME,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_scripts=[_PDF_LIB_URL],
     suppress_callback_exceptions=True,
 )
 app.title = "ALPB Pitchers — Scouting Report"
 server = app.server
+
+# Mounted under the Dash base path, not the root: the ALB forwards the full
+# `/widgets/pitching/*` path, so a root-mounted route is unreachable in prod.
+team_pdf.register_routes(server, _URL_BASE_PATHNAME)
 
 
 @server.route("/healthz")
@@ -207,6 +227,9 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                             id="download-team-pdf-btn",
                             className="btn btn-brand-outline w-100",
                         ),
+                        # Progress + outcome for the team report, which is
+                        # merged page by page in the browser and takes a while.
+                        html.Div(id="team-pdf-status", className="team-pdf-status"),
                     ]),
                     xs=12,
                     md=4,
@@ -418,6 +441,20 @@ def toggle_team_pdf_button(selected_team: str | None):
     if not selected_team or selected_team == _ALL_TEAMS:
         return {"display": "none"}
     return {"display": "block"}
+
+
+# The team report runs in the browser: it fetches one page per pitcher from the
+# routes in features/team_pdf.py and merges them with pdf-lib. Server-side it was
+# a single request longer than any timeout in the path — 504 at the ALB.
+app.clientside_callback(
+    ClientsideFunction(namespace="teamPdf", function_name="run"),
+    Output("team-pdf-status", "children"),
+    Input("download-team-pdf-btn", "n_clicks"),
+    State("selected-team", "value"),
+    State("tag-choice", "value"),
+    State("batter-side", "value"),
+    prevent_initial_call=True,
+)
 
 
 @callback(Output("pitch-data-store", "data"), Input("alpb-player-id-store", "data"))

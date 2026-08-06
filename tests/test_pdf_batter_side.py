@@ -28,7 +28,6 @@ from python_app.features.pdf_export import (
     _draw_banner,
     _filename_side_suffix,
     _generate_pdf,
-    _generate_team_pdf,
 )
 
 
@@ -308,9 +307,14 @@ def test_filename_side_suffix() -> None:
     assert _filename_side_suffix(None) == ""
 
 
-# ── Team PDF: every page inherits the same side ───────────────────────────────
+# ── Team report: every page inherits the same side ───────────────────────────
+#
+# The team report is no longer one server-side render (that request 504'd at the
+# ALB for a 34-man roster). The browser now asks for one page per pitcher, so the
+# side has to survive the round trip on each of them — see
+# tests/test_team_pdf_routes.py for the routes themselves.
 
-def test_team_pdf_passes_the_side_to_every_page(monkeypatch) -> None:
+def test_every_requested_page_inherits_the_side(monkeypatch) -> None:
     team = pd.DataFrame([
         {"iscore_guid": "g1", "fname": "Alex", "lname": "Ace",
          "full_name": "Alex Ace", "teamname": "Test Team"},
@@ -319,16 +323,20 @@ def test_team_pdf_passes_the_side_to_every_page(monkeypatch) -> None:
     ])
     sides: list[str | None] = []
 
-    monkeypatch.setattr(pdf_export.cache, "get_season_stats", lambda guid: None)
-    monkeypatch.setattr(pdf_export, "_pitch_df_for_player", lambda p: None)
     monkeypatch.setattr(
         pdf_export,
         "_append_player_page",
         lambda **kwargs: sides.append(kwargs["batter_side"]),
     )
 
-    path = _generate_team_pdf(team, "auto_pitch_type", "Left")
-    try:
-        assert sides == ["Left", "Left"]
-    finally:
-        os.unlink(path)
+    for _, player in team.iterrows():
+        pdf_export.render_player_pdf_bytes(
+            name=str(player["full_name"]),
+            player=player,
+            season_stats=None,
+            pitch_data=None,
+            pitch_tag="auto_pitch_type",
+            batter_side="Left",
+        )
+
+    assert sides == ["Left", "Left"]
