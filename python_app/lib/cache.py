@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import OrderedDict
 
 import pandas as pd
 
 from python_app.config import (
     NEGATIVE_ID_TTL_SECONDS,
     NEGATIVE_PITCH_DATA_TTL_SECONDS,
+    PITCH_DATA_MAX_PITCHERS,
     PITCH_DATA_TTL_SECONDS,
     REFETCH_BACKOFF_SECONDS,
     ROSTER_TTL_SECONDS,
@@ -52,7 +54,11 @@ class DataCache:
         # expire after PITCH_DATA_TTL_SECONDS; an empty (None) entry expires after
         # the shorter NEGATIVE_PITCH_DATA_TTL_SECONDS so a pitcher whose Trackman
         # data lands after his first view stops reading as permanently empty.
-        self._pitch_data: dict[str, tuple[list[dict] | None, float]] = {}
+        # Bounded and ordered by last use: pitch records are the only thing here
+        # big enough to matter against the task's 1024 MB, and expiry alone never
+        # freed a byte — an expired entry was overwritten on the next fetch, or
+        # kept forever if that pitcher was never viewed again.
+        self._pitch_data: OrderedDict[str, tuple[list[dict] | None, float]] = OrderedDict()
         # Each entry is (stats_or_None, cached_at_monotonic) — an iScore season
         # line moves every time a game is finalised.
         self._season_stats: dict[str, tuple[pd.DataFrame | None, float]] = {}
@@ -262,6 +268,7 @@ class DataCache:
                 else PITCH_DATA_TTL_SECONDS
             )
             if (time.monotonic() - cached_at) < ttl:
+                self._pitch_data.move_to_end(player_id)
                 return records
             # entry expired — fall through and refetch
         df = fetch_alpb_pitches(player_id)
@@ -270,13 +277,29 @@ class DataCache:
                 # Transient/empty refetch — keep the pitches we already serve
                 # (load_roster takes the same stance: never serve empty over good
                 # data) and retry after a short backoff rather than on every view.
-                self._pitch_data[player_id] = (cached[0], _backoff_stamp(PITCH_DATA_TTL_SECONDS))
+                self._store_pitch_data(
+                    player_id, cached[0], _backoff_stamp(PITCH_DATA_TTL_SECONDS))
                 return cached[0]
-            self._pitch_data[player_id] = (None, time.monotonic())
+            self._store_pitch_data(player_id, None, time.monotonic())
             return None
         records = df.to_dict("records")
-        self._pitch_data[player_id] = (records, time.monotonic())
+        self._store_pitch_data(player_id, records, time.monotonic())
         return records
+
+    def _store_pitch_data(
+        self, player_id: str, records: list[dict] | None, cached_at: float,
+    ) -> None:
+        """Cache one pitcher's records, dropping the least recently used if full.
+
+        Eviction is by last use rather than by age: the entries worth keeping are
+        the ones being looked at, and a team report walks a whole roster in one
+        pass. The cap has to clear a full roster (34 for High Point) or that pass
+        would evict its own earlier pages while it ran.
+        """
+        self._pitch_data[player_id] = (records, cached_at)
+        self._pitch_data.move_to_end(player_id)
+        while len(self._pitch_data) > max(PITCH_DATA_MAX_PITCHERS, 1):
+            self._pitch_data.popitem(last=False)
 
 
 # Module-level singleton used by all features

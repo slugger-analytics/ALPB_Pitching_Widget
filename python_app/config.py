@@ -150,3 +150,12 @@ SEASON_STATS_TTL_SECONDS: int = int(os.getenv("SEASON_STATS_TTL_SECONDS", "1800"
 # restamped to expire again after this short backoff — otherwise every later
 # view would issue its own upstream request for as long as the API is degraded.
 REFETCH_BACKOFF_SECONDS: int = int(os.getenv("REFETCH_BACKOFF_SECONDS", "60"))
+
+# How many pitchers' pitch records stay resident. Expired entries were only ever
+# overwritten, never dropped, and nothing capped how many pitchers accumulated:
+# a season of pitch rows measures ~4.4 KB per pitch on the wire (Baird, 90
+# pitches, 396 KB) and a workhorse starter carries well over a thousand, so a
+# container that had served enough of the league would climb toward the task's
+# 1024 MB. A team report now touches a whole roster in one go — 34 for High
+# Point — so the floor here has to clear a full team with room to browse.
+PITCH_DATA_MAX_PITCHERS: int = int(os.getenv("PITCH_DATA_MAX_PITCHERS", "60"))

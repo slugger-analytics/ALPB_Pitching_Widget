@@ -384,3 +384,60 @@ def test_empty_season_stats_frame_does_not_raise(monkeypatch):
 
     result = dc.get_season_stats("g1")
     assert result is not None and not result.empty
+
+
+# ── Pitch-data cache is bounded ───────────────────────────────────────────────
+#
+# Expiry alone never freed memory: an expired entry was overwritten on the next
+# fetch of that same pitcher, or kept forever if he was never viewed again, and
+# nothing capped how many pitchers accumulated. Pitch rows are the only thing in
+# this cache big enough to matter — ~4.4 KB per pitch on the wire, and a starter
+# carries well over a thousand — against a 1024 MB task.
+
+def test_pitch_cache_evicts_the_least_recently_used(monkeypatch):
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+    monkeypatch.setattr("python_app.lib.cache.PITCH_DATA_MAX_PITCHERS", 3)
+
+    dc = DataCache()
+    for pid in ("p1", "p2", "p3"):
+        dc.get_pitch_data(pid)
+    dc.get_pitch_data("p1")          # p1 is now the most recently used
+    dc.get_pitch_data("p4")          # over the cap → p2 is the oldest use
+
+    assert set(dc._pitch_data) == {"p1", "p3", "p4"}
+
+
+def test_pitch_cache_holds_a_whole_roster(monkeypatch):
+    """A team report walks one roster in a single pass — 34 for High Point.
+
+    A cap below that would have the export evicting its own earlier pages while
+    it ran, re-fetching pitchers it had already paid for.
+    """
+    from python_app.config import PITCH_DATA_MAX_PITCHERS as configured
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+    dc = DataCache()
+    for i in range(34):
+        dc.get_pitch_data(f"p{i}")
+
+    assert configured >= 34, "the cap must clear the largest roster in the league"
+    assert len(dc._pitch_data) == 34, "a single team export evicted its own pages"
+
+
+def test_a_kept_entry_after_a_failed_refetch_still_counts_against_the_cap(monkeypatch):
+    """The keep-what-we-have path must not slip past eviction."""
+    monkeypatch.setattr("python_app.lib.cache.PITCH_DATA_MAX_PITCHERS", 2)
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+
+    dc = DataCache()
+    dc.get_pitch_data("p1")
+    dc._pitch_data["p1"] = (dc._pitch_data["p1"][0], time.monotonic() - (PITCH_DATA_TTL_SECONDS + 1))
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: None)
+    assert dc.get_pitch_data("p1") is not None      # kept, as designed
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: _pitch_df())
+    dc.get_pitch_data("p2")
+    dc.get_pitch_data("p3")
+
+    assert len(dc._pitch_data) == 2
