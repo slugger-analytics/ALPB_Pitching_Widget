@@ -178,9 +178,15 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
     ),
 
     # ── Banner ────────────────────────────────────────────────────────────
-    html.Div(className="brand-banner text-center", children=[
-        html.H1("ALPB Pitchers"),
-        html.Div("Pitching Scouting Report Dashboard", className="subtitle"),
+    html.Div(className="brand-banner", children=[
+        html.Div(className="brand-banner-inner", children=[
+            html.Div([
+                html.Div("ALPB / PITCHING", className="brand-kicker"),
+                html.H1("Pitcher Reports"),
+                html.Div("Trackman pitch profiles and season context", className="subtitle"),
+            ]),
+            html.Div("SCOUTING DASHBOARD", className="brand-mark"),
+        ]),
     ]),
 
     # ── Toolbar row (team/player selectors + PDF buttons) ────────────────
@@ -229,7 +235,6 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                     ]),
                     xs=12, md=4,
                 ),
-                dbc.Col(xs=12, md=1, className="d-none d-md-block"),
                 dbc.Col(
                     html.Div(className="d-grid gap-2", children=[
                         html.Button(
@@ -247,10 +252,10 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                         html.Div(id="team-pdf-status", className="team-pdf-status"),
                     ]),
                     xs=12,
-                    md=4,
+                    md=3,
                     className="d-flex align-items-center",
                 ),
-            ], className="align-items-center"),
+            ], className="align-items-end toolbar-grid"),
         ]),
     ]),
     dcc.Download(id="download-pdf"),
@@ -259,7 +264,10 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
     html.Div(className="content-wrapper", children=[
 
         # ── Section 1: Pitcher Info + Season Stats ────────────────────
-        section_label("Pitcher Information & Season Stats"),
+        html.Div(
+            "Pitcher Information & Season Stats",
+            className="section-label overview-section-label",
+        ),
         dbc.Row([
             dbc.Col(player_info.layout(), xs=12, md=3),
             dbc.Col(season_stats.layout(), xs=12, md=9),
@@ -278,6 +286,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
             # Controls strip
             dbc.Row(dbc.Col(
                 html.Div(className="controls-panel", children=[
+                    html.Div("Chart Filters", className="controls-heading"),
                     dbc.Row([
                         dbc.Col([
                             html.Label("Break Type:", className="fw-bold mb-1"),
@@ -291,8 +300,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                 ],
                                 value="induced_vert_break",
                                 labelStyle={
-                                    "display": "block",
-                                    "marginBottom": "3px",
+                                    "display": "inline-block",
+                                    "marginRight": "12px",
                                 },
                             ),
                         ], xs=12, md=3),
@@ -311,8 +320,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                 ],
                                 value="auto_pitch_type",
                                 labelStyle={
-                                    "display": "block",
-                                    "marginBottom": "3px",
+                                    "display": "inline-block",
+                                    "marginRight": "12px",
                                 },
                             ),
                         ], xs=12, md=3),
@@ -344,8 +353,8 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                                 ],
                                 value=BATTER_SIDE_ALL,
                                 labelStyle={
-                                    "display": "block",
-                                    "marginBottom": "3px",
+                                    "display": "inline-block",
+                                    "marginRight": "12px",
                                 },
                             ),
                         ], xs=12, md=3),
