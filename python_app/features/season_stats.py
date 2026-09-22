@@ -29,14 +29,15 @@ def layout():
 @callback(
     Output("season-stats-output", "children"),
     Input("selected-player", "value"),
+    Input("selected-season", "value"),
 )
-def update_season_stats(iscore_guid: str | None):
-    """Refresh the stats table when a new pitcher is chosen."""
+def update_season_stats(iscore_guid: str | None, season_guid: str | None):
+    """Refresh the stats table when a new pitcher or season is chosen."""
     player = cache.get_player(iscore_guid)
     if player is None:
         return "Select a pitcher."
 
-    stats = cache.get_season_stats(str(player["iscore_guid"]))
+    stats = cache.get_season_stats(str(player["iscore_guid"]), season_guid=season_guid)
     if stats is None or stats.empty:
         return html.P("No season stats found for this player.")
 

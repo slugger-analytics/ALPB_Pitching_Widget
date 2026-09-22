@@ -21,19 +21,51 @@ from python_app.config import (
     ROSTER_TTL_SECONDS,
     SEASON_STATS_TTL_SECONDS,
 )
+from python_app.lib.api import _select_pitcher_match
 from python_app.lib.cache import DataCache
 
 
-def _roster_df(guid: str = "g1", fname: str = "Alex", lname: str = "Ace") -> pd.DataFrame:
+def _roster_df(
+    guid: str = "g1",
+    fname: str = "Alex",
+    lname: str = "Ace",
+    team: str = "Test Team",
+    position: str = "Pitcher",
+) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "iscore_guid": [guid],
             "fname": [fname],
             "lname": [lname],
             "full_name": [f"{fname} {lname}"],
-            "teamname": ["Test Team"],
+            "teamname": [team],
+            "position": [position],
         }
     )
+
+
+def test_select_pitcher_match_prefers_team_and_position():
+    players = [
+        {
+            "is_pitcher": True,
+            "player_first_name": "Alex",
+            "player_last_name": "Ace",
+            "player_team": "Alpha",
+            "position": "Starting Pitcher",
+            "player_id": "alpha-id",
+        },
+        {
+            "is_pitcher": True,
+            "player_first_name": "Alex",
+            "player_last_name": "Ace",
+            "player_team": "Bravo",
+            "position": "Relief Pitcher",
+            "player_id": "bravo-id",
+        },
+    ]
+
+    match = _select_pitcher_match(players, "Alex", "Ace", team="Bravo", position="RP")
+    assert match["player_id"] == "bravo-id"
 
 
 # ── Roster staleness / refresh ────────────────────────────────────────────
@@ -109,7 +141,7 @@ def test_failed_refetch_keeps_previous_df(monkeypatch):
 def test_positive_alpb_id_persists(monkeypatch):
     calls = []
 
-    def fake_info(fname, lname):
+    def fake_info(fname, lname, **kwargs):
         calls.append((fname, lname))
         return {"player_id": "555"}
 
@@ -130,7 +162,7 @@ def test_positive_alpb_id_persists(monkeypatch):
 def test_negative_alpb_id_expires(monkeypatch):
     calls = []
 
-    def fake_info(fname, lname):
+    def fake_info(fname, lname, **kwargs):
         calls.append((fname, lname))
         return None
 
@@ -228,6 +260,21 @@ def test_fresh_pitch_data_not_refetched(monkeypatch):
     dc.get_pitch_data("p1")
     dc.get_pitch_data("p1")
     assert len(calls) == 1
+
+
+def test_pitch_data_filters_to_season_label(monkeypatch):
+    rows = [
+        {"date": "2025-06-10", "rel_speed": 94.0, "auto_pitch_type": "Fastball"},
+        {"date": "2026-04-21", "rel_speed": 92.0, "auto_pitch_type": "Fastball"},
+    ]
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_alpb_pitches", lambda pid: pd.DataFrame(rows))
+
+    dc = DataCache()
+    result = dc.get_pitch_data("p1", season_label="ALPB 2026")
+
+    assert len(result) == 1
+    assert result[0]["date"] == "2026-04-21"
 
 
 def test_empty_pitch_data_retried_sooner_than_populated(monkeypatch):
@@ -336,6 +383,26 @@ def test_fresh_season_stats_not_refetched(monkeypatch):
     dc.get_season_stats("g1")
     dc.get_season_stats("g1")
     assert len(calls) == 1
+
+
+def test_season_stats_respects_selected_season_guid(monkeypatch):
+    calls = []
+
+    def fake_stats(guid, season_guid=None):
+        calls.append((guid, season_guid))
+        return _stats_df(3.00)
+
+    monkeypatch.setattr("python_app.lib.cache.fetch_iscore_player_stats", fake_stats)
+
+    dc = DataCache()
+    dc._pitchers_df = _roster_df(guid="g1")
+
+    first = dc.get_season_stats("g1", season_guid="s1")
+    second = dc.get_season_stats("g1", season_guid="s2")
+
+    assert first is not None and not first.empty
+    assert second is not None and not second.empty
+    assert calls == [("g1", "s1"), ("g1", "s2")]
 
 
 def test_season_stats_refetch_failure_keeps_previous_line(monkeypatch):

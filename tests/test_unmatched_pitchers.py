@@ -91,6 +91,17 @@ def _name_variants(fname: str, lname: str) -> list[tuple[str, str]]:
     if fname.lower() == "fransisco":
         _add(f"{lname}, Francisco", "Francisco spelling")
 
+    # Known ALPB canonical-name aliases; these are intentionally stored in
+    # ``python_app/lib/api.py`` for production matching and should also be part
+    # of the diagnostics we check by hand.
+    if fname.lower() == "fin" and "bonta" in lname.lower():
+        _add("Bonta-Smith, Fin Del", "known alias")
+        _add("Bonta Smith, Fin Del", "known alias (space variant)")
+        _add("Bonta-Smith, Fin", "known alias short form")
+    if fname.lower() == "josimar" and "cousin" in lname.lower():
+        _add("Cousin, Josimar", "known alias")
+        _add("Cousins, Josimar", "known alias plural form")
+
     return variants
 
 

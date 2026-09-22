@@ -10,6 +10,7 @@ and the matplotlib PDF export so they always look consistent.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -127,6 +128,59 @@ ISCORE_BASE_URL = os.getenv(
 ISCORE_LEAGUE_GUID = os.getenv("ISCORE_LEAGUE_GUID", "")
 ISCORE_SEASON_GUID = os.getenv("ISCORE_SEASON_GUID", "")
 ISCORE_SEASON_NAME = os.getenv("ISCORE_SEASON_NAME", "ALPB 2026")
+
+
+def _season_option_from_env(raw_value: str, raw_label: str | None = None) -> dict[str, str] | None:
+    """Parse a season option from a JSON or CSV-style env value."""
+    value = str(raw_value or "").strip()
+    label = str(raw_label or value).strip() if raw_label is not None else ""
+    if not value:
+        return None
+    return {"label": label or value, "value": value}
+
+
+def _load_season_options() -> list[dict[str, str]]:
+    raw = os.getenv("ISCORE_SEASON_OPTIONS", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                options: list[dict[str, str]] = []
+                for item in parsed:
+                    if isinstance(item, dict):
+                        value = str(item.get("value") or item.get("guid") or "").strip()
+                        label = str(item.get("label") or item.get("name") or value).strip()
+                        if value:
+                            options.append({"label": label or value, "value": value})
+                if options:
+                    return options
+        except json.JSONDecodeError:
+            pass
+
+        pairs = []
+        for item in [part.strip() for part in raw.split(",") if part.strip()]:
+            if "|" in item:
+                left, right = item.split("|", 1)
+                pairs.append((left.strip(), right.strip()))
+            elif "=" in item:
+                left, right = item.split("=", 1)
+                pairs.append((left.strip(), right.strip()))
+            else:
+                pairs.append((item, item))
+        options = [
+            {"label": label or value, "value": value}
+            for value, label in pairs
+            if value and label
+        ]
+        if options:
+            return options
+
+    if ISCORE_SEASON_GUID:
+        return [{"label": ISCORE_SEASON_NAME, "value": ISCORE_SEASON_GUID}]
+    return []
+
+
+SEASON_OPTIONS: list[dict[str, str]] = _load_season_options()
 
 # ── Parallel-fetch settings ──────────────────────────────────────────────────
 MAX_WORKERS: int = 8

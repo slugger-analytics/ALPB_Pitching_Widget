@@ -46,13 +46,32 @@ _FIRST_NAME_CORRECTIONS: dict[str, str] = {
     "fransisco": "Francisco",
     "issac":     "Isaac",
 }
-
+# Real ALPB roster quirks: some players surface with a compound last name whose
+# leading prefix sits in the first-name slot (for example "Bonta-Smith, Fin Del")
+# or with the last name singularized in the API response ("Cousin, Josimar").
+_ALPB_NAME_ALIASES: dict[tuple[str, str], list[str]] = {
+    ("fin", "del bonta-smith"): [
+        "Bonta-Smith, Fin Del",
+        "Bonta Smith, Fin Del",
+        "Bonta-Smith, Fin",
+        "Bonta Smith, Fin",
+    ],
+    ("josimar", "cousins"): [
+        "Cousin, Josimar",
+        "Cousins, Josimar",
+    ],
+}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ALPB Trackman
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
+def fetch_alpb_pitcher_info(
+    fname: str,
+    lname: str,
+    team: str | None = None,
+    position: str | None = None,
+) -> dict | None:
     """Look up a pitcher's ALPB ID by name.  Returns a dict or *None*."""
     url = f"{ALPB_BASE_URL}/players"
     for query in _alpb_query_candidates(fname, lname):
@@ -62,7 +81,7 @@ def fetch_alpb_pitcher_info(fname: str, lname: str) -> dict | None:
             data = res.json().get("data")
             if not isinstance(data, list) or not data:
                 continue
-            player = _select_pitcher_match(data, fname, lname)
+            player = _select_pitcher_match(data, fname, lname, team=team, position=position)
             if player and player.get("player_id"):
                 return {
                     "player_id": player["player_id"],
@@ -93,6 +112,11 @@ def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
     corrected_first = _FIRST_NAME_CORRECTIONS.get(first.lower(), first)
     corrected_first_ascii = _ascii_fold(corrected_first)
 
+    # Some ALPB records surface under a different canonical name than the iScore
+    # roster. Include those exact aliases before the generic fallbacks so the
+    # search still finds the real player record without broadening the match
+    # logic beyond the known data quirks.
+    alias_key = (first.lower(), last.lower())
     queries: list[str] = []
     seen: set[str] = set()
 
@@ -105,6 +129,9 @@ def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
             return
         seen.add(key)
         queries.append(token)
+
+    for alias in _ALPB_NAME_ALIASES.get(alias_key, []):
+        _add(alias)
 
     _add(f"{last}, {first}")
     _add(f"{last_ascii}, {first_ascii}")
@@ -132,7 +159,78 @@ def _alpb_query_candidates(fname: str, lname: str) -> list[str]:
     return queries
 
 
-def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict | None:
+def _player_team_and_position(player: dict) -> tuple[str, str]:
+    """Extract normalized team and position from ALPB payloads."""
+    team = (
+        str(player.get("player_team") or player.get("team_name") or player.get("team") or player.get("teamname") or "")
+        .strip()
+    )
+    position = (
+        str(player.get("player_position") or player.get("position") or player.get("role") or "")
+        .strip()
+    )
+    return _normalize_name(team), _normalize_name(position)
+
+
+def _last_name_variants(value: str | None) -> set[str]:
+    """Return the normalized last-name variants we accept for a match.
+
+    Some ALPB records store compound surnames with a leading connector such as
+    "Del" in the first-name slot, or use the singular/plural form of the same
+    family name. Accept the common variants instead of requiring an exact string
+    match on the raw iScore roster value.
+    """
+    base = _normalize_name(value or "")
+    if not base:
+        return set()
+
+    variants: set[str] = {base}
+    tokens = base.split()
+    if len(tokens) > 1:
+        variants.add(" ".join(tokens[1:]))
+        variants.add(" ".join(tokens[:-1]))
+        if tokens[0] in {"del", "de", "la", "le", "van", "von", "bin", "al", "el"}:
+            variants.add(" ".join(tokens[1:]))
+
+    singularized = set()
+    for variant in list(variants):
+        if variant.endswith("s") and len(variant) > 1:
+            singularized.add(variant[:-1])
+        if variant.endswith("es") and len(variant) > 2:
+            singularized.add(variant[:-2])
+    variants |= singularized
+    return variants
+
+
+def _match_position(position: str | None, candidate_position: str | None) -> bool:
+    """Match pitcher roles loosely enough for ALPB/iScore discrepancies."""
+    if not position:
+        return True
+    if not candidate_position:
+        return True
+
+    target = _normalize_name(position)
+    candidate = _normalize_name(candidate_position)
+    aliases = {
+        "p": {"p", "pitcher"},
+        "pitcher": {"p", "pitcher"},
+        "sp": {"sp", "starting pitcher", "starter"},
+        "starting pitcher": {"sp", "starting pitcher", "starter"},
+        "rp": {"rp", "relief pitcher", "reliever", "bullpen"},
+        "relief pitcher": {"rp", "relief pitcher", "reliever", "bullpen"},
+    }
+    if target == candidate:
+        return True
+    return candidate in aliases.get(target, set()) or target in aliases.get(candidate, set())
+
+
+def _select_pitcher_match(
+    players: list[dict],
+    fname: str,
+    lname: str,
+    team: str | None = None,
+    position: str | None = None,
+) -> dict | None:
     """Choose the best pitcher candidate from ALPB `/players` response."""
     pitchers = [p for p in players if isinstance(p, dict) and p.get("is_pitcher")]
     if not pitchers:
@@ -140,13 +238,24 @@ def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict |
 
     target_first = _normalize_name(fname).split(" ")[0]
     target_last = _strip_suffix_norm(_normalize_name(lname))
+    target_last_variants = _last_name_variants(target_last)
+    target_team = _normalize_name(team or "")
+    target_position = _normalize_name(position or "")
 
     for player in pitchers:
         first_name, last_name = _player_name_parts(player)
         first_norm = _normalize_name(first_name).split(" ")[0]
         last_norm = _strip_suffix_norm(_normalize_name(last_name))
-        if first_norm == target_first and last_norm == target_last:
-            return player
+        candidate_last_variants = _last_name_variants(last_norm)
+        player_team, player_position = _player_team_and_position(player)
+        if first_norm != target_first or last_norm != target_last:
+            if not (target_last_variants & candidate_last_variants):
+                continue
+        if target_team and player_team and player_team != target_team:
+            continue
+        if not _match_position(target_position, player_position):
+            continue
+        return player
 
     # Fuzzy initial match: last names match and both first names share the same
     # leading letter and are short enough to be initials (e.g. "jp" ↔ "j p")
@@ -154,8 +263,10 @@ def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict |
         first_name, last_name = _player_name_parts(player)
         first_norm = _normalize_name(first_name).replace(" ", "")
         last_norm = _strip_suffix_norm(_normalize_name(last_name))
+        candidate_last_variants = _last_name_variants(last_norm)
         target_first_nodot = target_first.replace(" ", "")
-        if (
+        player_team, player_position = _player_team_and_position(player)
+        if not (
             last_norm == target_last
             and first_norm
             and target_first_nodot
@@ -163,7 +274,13 @@ def _select_pitcher_match(players: list[dict], fname: str, lname: str) -> dict |
             and len(first_norm) <= 4
             and len(target_first_nodot) <= 4
         ):
-            return player
+            if not (target_last_variants & candidate_last_variants):
+                continue
+        if target_team and player_team and player_team != target_team:
+            continue
+        if not _match_position(target_position, player_position):
+            continue
+        return player
 
     if len(pitchers) == 1:
         return pitchers[0]
@@ -339,7 +456,7 @@ def fetch_all_pitchers_combined() -> pd.DataFrame:
     return fetch_iscore_pitchers(ISCORE_LEAGUE_GUID)
 
 
-def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
+def fetch_iscore_player_stats(player_guid: str, season_guid: str | None = None) -> pd.DataFrame | None:
     """Fetch season pitching stats for one iScore player."""
     if not player_guid:
         return None
@@ -360,11 +477,12 @@ def fetch_iscore_player_stats(player_guid: str) -> pd.DataFrame | None:
         data[0],
     )
 
+    resolved_season_guid = season_guid or ISCORE_SEASON_GUID
     # Stats are now keyed by season GUID: stats[seasonGuid].pitching.overall
     raw_stats = entry.get("stats") or {}
-    season_stats = raw_stats.get(ISCORE_SEASON_GUID) or {} if ISCORE_SEASON_GUID else {}
+    season_stats = raw_stats.get(resolved_season_guid) or {} if resolved_season_guid else {}
     if not season_stats:
-        # Fall back to first available season if configured GUID not found
+        # Fall back to first available season if the configured GUID is missing
         season_stats = next(iter(raw_stats.values()), {}) if raw_stats else {}
     pitching = season_stats.get("pitching") or {}
     overall = pitching.get("overall") or {}

@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import threading
 import time
+import re
 from collections import OrderedDict
 
 import pandas as pd
 
 from python_app.config import (
+    ISCORE_SEASON_GUID,
     NEGATIVE_ID_TTL_SECONDS,
     NEGATIVE_PITCH_DATA_TTL_SECONDS,
     PITCH_DATA_MAX_PITCHERS,
@@ -171,25 +173,44 @@ class DataCache:
 
     # ── Season stats ──────────────────────────────────────────────────────
 
-    def get_season_stats(self, iscore_guid: str) -> pd.DataFrame | None:
+    def _season_stats_key(self, iscore_guid: str, season_guid: str | None = None) -> str:
+        """Uniquely identify season-stats entries by player and season GUID."""
+        resolved = season_guid or ISCORE_SEASON_GUID
+        return f"{str(iscore_guid)}|{resolved or ''}"
+
+    def get_season_stats(self, iscore_guid: str, season_guid: str | None = None) -> pd.DataFrame | None:
         """Return cached season stats from iScore, refetching past SEASON_STATS_TTL_SECONDS."""
-        cached = self._season_stats.get(iscore_guid)
+        if season_guid is None:
+            cache_key = str(iscore_guid)
+            legacy_key = cache_key
+            resolved_season_guid = ISCORE_SEASON_GUID
+        else:
+            cache_key = self._season_stats_key(iscore_guid, season_guid)
+            legacy_key = cache_key
+            resolved_season_guid = season_guid
+
+        cached = self._season_stats.get(cache_key)
         if cached is not None:
             stats, cached_at = cached
             if (time.monotonic() - cached_at) < SEASON_STATS_TTL_SECONDS:
                 return stats
-            # entry expired — fall through and refetch
 
         player = self.get_player(iscore_guid)
         combined: pd.DataFrame | None = None
 
         if player is not None and iscore_guid:
             try:
-                combined = fetch_iscore_player_stats(iscore_guid)
-                if combined is not None:
-                    combined["teamname"] = str(player.get("teamname", ""))
+                combined = fetch_iscore_player_stats(iscore_guid, resolved_season_guid)
+            except TypeError:
+                try:
+                    combined = fetch_iscore_player_stats(iscore_guid)
+                except Exception:
+                    combined = None
             except Exception:
                 combined = None
+
+            if combined is not None:
+                combined["teamname"] = str(player.get("teamname", ""))
 
         if combined is not None:
             col_order = ["name", "teamname", "gp", "gs", "w", "l", "era", "er", "h", "bb", "so", "ip", "sv"]
@@ -205,11 +226,11 @@ class DataCache:
             combined = combined.fillna("-")
 
         if combined is None and cached is not None and cached[0] is not None:
-            # Transient iScore failure — keep the line we serve and retry after a
-            # short backoff rather than on every single view.
-            self._season_stats[iscore_guid] = (cached[0], _backoff_stamp(SEASON_STATS_TTL_SECONDS))
+            backoff = _backoff_stamp(SEASON_STATS_TTL_SECONDS)
+            self._season_stats[cache_key] = (cached[0], backoff)
             return cached[0]
-        self._season_stats[iscore_guid] = (combined, time.monotonic())
+
+        self._season_stats[cache_key] = (combined, time.monotonic())
         return combined
 
     # ── ALPB player ID ────────────────────────────────────────────────────
@@ -237,7 +258,12 @@ class DataCache:
         if player is None:
             self._alpb_ids[key] = (None, time.monotonic())
             return None
-        result = fetch_alpb_pitcher_info(player["fname"], player["lname"])
+        result = fetch_alpb_pitcher_info(
+            player["fname"],
+            player["lname"],
+            team=player.get("teamname"),
+            position=player.get("position"),
+        )
         pid = result["player_id"] if result else None
         self._alpb_ids[key] = (pid, time.monotonic())
         return pid
@@ -248,8 +274,8 @@ class DataCache:
     # every team, while these are per-player fetches and gunicorn runs
     # --workers 1 --threads 2, so at most two threads can race at TTL expiry.
     # Revisit if the worker/thread count is ever raised.
-    def get_pitch_data(self, player_id: str) -> list[dict] | None:
-        """Return raw pitch records for *player_id*, fetching on first access.
+    def get_pitch_data(self, player_id: str, season_label: str | None = None) -> list[dict] | None:
+        """Return raw pitch records for *player_id* and optional season label.
 
         Records expire after ``PITCH_DATA_TTL_SECONDS`` so pitches thrown since the
         last view appear without a container restart; an empty result expires after
@@ -260,7 +286,8 @@ class DataCache:
         """
         if not player_id:
             return None
-        cached = self._pitch_data.get(player_id)
+        cache_key = player_id if season_label is None else f"{player_id}|{season_label}"
+        cached = self._pitch_data.get(cache_key)
         if cached is not None:
             records, cached_at = cached
             ttl = (
@@ -268,22 +295,27 @@ class DataCache:
                 else PITCH_DATA_TTL_SECONDS
             )
             if (time.monotonic() - cached_at) < ttl:
-                self._pitch_data.move_to_end(player_id)
+                self._pitch_data.move_to_end(cache_key)
                 return records
             # entry expired — fall through and refetch
         df = fetch_alpb_pitches(player_id)
+        if df is not None and not df.empty and season_label:
+            season_match = re.search(r"(20\d{2})", str(season_label))
+            season_prefix = season_match.group(1) if season_match else str(season_label).strip()
+            if "date" in df.columns:
+                df = df[df["date"].astype(str).str.startswith(season_prefix)]
         if df is None or df.empty:
             if cached is not None and cached[0] is not None:
                 # Transient/empty refetch — keep the pitches we already serve
                 # (load_roster takes the same stance: never serve empty over good
                 # data) and retry after a short backoff rather than on every view.
                 self._store_pitch_data(
-                    player_id, cached[0], _backoff_stamp(PITCH_DATA_TTL_SECONDS))
+                    cache_key, cached[0], _backoff_stamp(PITCH_DATA_TTL_SECONDS))
                 return cached[0]
-            self._store_pitch_data(player_id, None, time.monotonic())
+            self._store_pitch_data(cache_key, None, time.monotonic())
             return None
         records = df.to_dict("records")
-        self._store_pitch_data(player_id, records, time.monotonic())
+        self._store_pitch_data(cache_key, records, time.monotonic())
         return records
 
     def _store_pitch_data(

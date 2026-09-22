@@ -33,7 +33,7 @@ from dash import (
 import dash_bootstrap_components as dbc
 import pandas as pd
 
-from python_app.config import BATTER_SIDE_ALL, BATTER_SIDE_LABELS
+from python_app.config import BATTER_SIDE_ALL, BATTER_SIDE_LABELS, SEASON_OPTIONS
 from python_app.lib.cache import cache
 from python_app.lib.filters import known_pitch_types
 from python_app.lib.styles import section_label
@@ -108,6 +108,7 @@ def healthz():
 
 
 _ALL_TEAMS = "__ALL_TEAMS__"
+_DEFAULT_SEASON = SEASON_OPTIONS[0]["value"] if SEASON_OPTIONS else None
 
 
 def _build_player_options(team_name: str | None) -> list[dict[str, str]]:
@@ -199,6 +200,20 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                         ),
                     ]),
                     xs=12, md=3,
+                ),
+                dbc.Col(
+                    html.Div([
+                        html.Label("Season", className="toolbar-label"),
+                        dcc.Dropdown(
+                            id="selected-season",
+                            options=SEASON_OPTIONS,
+                            value=_DEFAULT_SEASON,
+                            clearable=False,
+                            placeholder="Choose a Season...",
+                            style={"fontSize": "0.92rem"},
+                        ),
+                    ]),
+                    xs=12, md=2,
                 ),
                 dbc.Col(
                     html.Div([
@@ -457,10 +472,23 @@ app.clientside_callback(
 )
 
 
-@callback(Output("pitch-data-store", "data"), Input("alpb-player-id-store", "data"))
-def fetch_pitch_data(player_id: str | None):
-    """Fetch raw pitch records for the selected ALPB player."""
-    return cache.get_pitch_data(player_id) if player_id else None
+@callback(
+    Output("pitch-data-store", "data"),
+    Input("alpb-player-id-store", "data"),
+    Input("selected-season", "value"),
+    State("selected-season", "options"),
+)
+def fetch_pitch_data(player_id: str | None, season_value: str | None, season_options: list[dict[str, str]] | None):
+    """Fetch raw pitch records for the selected ALPB player in the chosen season."""
+    if not player_id:
+        return None
+    season_label = None
+    if season_value is not None and season_options:
+        season_label = next(
+            (opt.get("label") for opt in season_options if str(opt.get("value")) == str(season_value)),
+            None,
+        )
+    return cache.get_pitch_data(player_id, season_label=season_label)
 
 
 @callback(Output("alpb-rows", "style"), Input("alpb-player-id-store", "data"))
