@@ -278,7 +278,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
         ),
 
         # ── ALPB Trackman sections (hidden when no ALPB data) ─────────
-        html.Div(id="alpb-rows", children=[
+        html.Div(id="alpb-rows", children=[dcc.Loading(type="circle", color="#c62127", children=[
 
             # Section 2: Pitch Movement (scatter plots)
             section_label("Pitch Movement"),
@@ -380,7 +380,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                 dbc.Col(pitch_split.layout(), xs=12),
                 className="mb-3",
             ),
-        ]),
+        ])]),
 
         # ── Footer ────────────────────────────────────────────────────
         html.Div(
