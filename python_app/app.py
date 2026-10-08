@@ -245,13 +245,17 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
 
         # ── Section 1: Pitcher Info + Season Stats ────────────────────
         section_label("Pitcher Information & Season Stats"),
-        dbc.Row([
-            dbc.Col(player_info.layout(), xs=12, md=3),
-            dbc.Col(season_stats.layout(), xs=12, md=9),
-        ], className="gx-3 mb-3"),
+        dcc.Loading(
+            type="circle",
+            color="#c62127",
+            children=dbc.Row([
+                dbc.Col(player_info.layout(), xs=12, md=3),
+                dbc.Col(season_stats.layout(), xs=12, md=9),
+            ], className="gx-3 mb-3"),
+        ),
 
         # ── ALPB Trackman sections (hidden when no ALPB data) ─────────
-        html.Div(id="alpb-rows", children=[
+        html.Div(id="alpb-rows", children=[dcc.Loading(type="circle", color="#c62127", children=[
 
             # Section 2: Pitch Movement (scatter plots)
             section_label("Pitch Movement"),
@@ -352,7 +356,7 @@ app.layout = dbc.Container(fluid=True, style={"padding": 0}, children=[
                 dbc.Col(pitch_split.layout(), xs=12),
                 className="mb-3",
             ),
-        ]),
+        ])]),
 
         # ── Footer ────────────────────────────────────────────────────
         html.Div(
